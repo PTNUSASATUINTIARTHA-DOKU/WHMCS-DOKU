@@ -1,0 +1,47 @@
+<?php
+$DOKUCONFIGS = array(
+	'paymentchannels' => array(
+		array('00', 'All Available Payment'),
+        array('04', 'DOKU Wallet'),
+        array('01', 'Installment'),
+		array('15', 'Credit Card'),
+		array('36', 'ATM Transfer via Permata VA'),
+		array('41', 'ATM Transfer via Mandiri VA'),
+		array('29', 'ATM Transfer via BCA VA'),
+		array('34', 'ATM Transfer via BRI VA'),
+		array('32', 'ATM Transfer via CIMB VA'),
+		array('33', 'ATM Transfer via Danamon VA'),
+		array('35', 'Convenience Store via Alfa Group'),
+		array('31', 'Convenience Store via Indomaret'),
+		array('02', 'Mandiri Clickpay'),
+		array('06', 'e-Pay BRI'),
+		array('19', 'CIMB Clicks'),
+		array('25', 'Muamalat Internet Banking'),
+		array('26', 'Danamon Online Banking'),
+		array('28', 'PermataNet'),
+		array('37', 'Kredivo'),
+		array('16', 'Tokenization'),
+		),
+	'paymentacquirers' => array(
+		'onus'				=> array(
+			array('100', 'Bank BNI'),
+			array('400', 'Bank BCA'),
+			array('300', 'Bank Mandiri'),
+		),
+		'offus'				=> array(
+			array('100','Bukopin'),
+			array('100','Permata'),
+			array('100','UOB'),
+			array('100','BRI'),
+			array('100','OCBC'),
+			array('100','HSBC'),
+			array('100','Danamon'),
+			array('100','Standard Chartered'),
+		),
+	),
+	'paymenttenors' => array(
+		array('03', '03 Bulan'),
+		array('06', '06 Bulan'),
+		array('12', '12 Bulan'),
+	),
+);
