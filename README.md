@@ -22,12 +22,9 @@ With this plugin you can accept online payment on your WHMCS using DOKU payment 
 
 1. Access your WHMCS admin page.
 2. Go to menu Setup -> Payments -> Payment Gateways.
-3. There are will be 2 payment type show up there in your payment gateway settings
+3. There are will be 2 payment type show up there in your payment gateway settings, choose the payment method you prefer
 * DOKU - Standard Payment if you wanted standard payment
 * DOKU - Subscription if you wanted to use Subscription
-
-Choose which you preferred as your payment method
-
 4. Then choose Setup -> Payments -> Payment Gateways -> Manage Existing Gateways
 5. Fill the input as instructed on the screen. 
 6. Click Save Changes
