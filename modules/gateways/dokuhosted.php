@@ -8,7 +8,7 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
- Version: V1.2
+ Version: V1.1
  Released: Sept 18, 2017
  --------------------------
  *
@@ -35,7 +35,7 @@ if (!defined("WHMCS")) {
  */
 function dokuhosted_MetaData() {
     return array(
-        'DisplayName' => 'DOKU Payment Gateway - Indonesia',
+        'DisplayName' => 'DOKU Merchant',
         'APIVersion' => '1.2', // Use API Version 1.1
         'DisableLocalCredtCardInput' => true,
         'TokenisedStorage' => false,
@@ -148,12 +148,6 @@ Class dokuhosted_DokuAdmin {
 		}
 	}
 }
-// Start new DokuAdmin instance
-/*
-error_reporting(E_ALL);
-ini_set('display_startup_errors', true);
-ini_set('display_errors', true);
-*/
 // Include @DOKUCONFIGS
 $configfile = (dirname(__FILE__). '/dokuhosted/dokuhosted-config.php');
 if (!file_exists($configfile)) {
@@ -192,7 +186,7 @@ function dokuhosted_config() {
         // defined here for backwards compatibility
         'FriendlyName' => array(
             'Type' => 'System',
-            'Value' => 'DOKU - Standard Payment',
+            'Value' => 'DOKU Merchant',
 			'Description' => 'DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on http://www.doku.com',
         ),
 		'Pembatas-Description-Payment-Gateway' => array(
@@ -228,15 +222,6 @@ function dokuhosted_config() {
             'Default' => '',
             'Description' => 'Enter your Mall ID here',
         ),
-		/*
-        'ShopName' => array(
-            'FriendlyName' => 'Sandbox: Shop Name',
-            'Type' => 'text',
-            'Size' => '25',
-            'Default' => '',
-            'Description' => 'Enter Shop Name here',
-        ),
-		*/
 		'ChainMerchant' => array(
             'FriendlyName' => 'Development: Chain Merchant (Default is: NA)',
             'Type' => 'text',
@@ -318,12 +303,7 @@ function dokuhosted_config() {
 			'Type' => "yesno",
 			'Description' => "Tick this box to enable DOKU Identify", 
 		),
-		//"Void-Enabled" => array(
-		//	'FriendlyName' => "Use Void?", 
-		//	'Type' => "yesno",
-		//	'Description' => "Tick this box to enable Payment Void", 
-	//	),
-		#
+		
 		"PaymentCheck-Enabled" => array(
 			'FriendlyName' => "<span style='font-weight:bold;'>Enable Payment Check During Notify and Redirect</span>", 
 			'Type' => "yesno",
@@ -626,18 +606,6 @@ function dokuhosted_config() {
 			}
 		}
 	}
-	//----------------------------------------------------------------------------------------------
-	/*
-	$configs['Custom-Data-To-Showing'] = array(
-		'FriendlyName' => 'Textarea Field',
-		'Type' 				=> 'textarea',
-		'Rows' 				=> '3',
-		'Cols' 				=> '60',
-		'Default'			=> print_r(array('g' => $GLOBAL_ACQUIRER_BANKS, 'b' => $getDokuPaymentAcquirers), true),
-		'Description' 		=> 'Freeform multi-line text input field',
-	);
-	*/
-	//------------------------------------------------------------------------------------
 	return $configs;
 }
 
@@ -1010,69 +978,6 @@ function dokuhosted_link($params) {
 			}
 		}
 	}
-	//-------------------------
-	/*
-	echo "<pre>";
-	ksort($params);
-	print_r($params);
-	echo "<hr/>";
-	print_r($InstallmentBanks);
-	
-	
-	echo "<hr/>";
-	echo "<hr/>";
-	echo "<hr/>";
-	print_r($getDokuPaymentAcquirers);
-	print_r($GLOBAL_ACQUIRER_BANKS);
-	
-	exit;
-	*/
-	//------------------------------------------------------------------------------------------------
-	/*
-	$InstallmentBanks = array();
-	$getDokuPaymentAcquirers = dokuhosted_DokuAdmin::getDokuPaymentConfigs('acquirers');
-	if (count($getDokuPaymentAcquirers) > 0) {
-		foreach ($getDokuPaymentAcquirers as $keval) {
-			if (isset($keval[0])) {
-				if (isset($params["Bank-Installment-Acquirer-{$keval[0]}"])) {
-					if ($params["Bank-Installment-Acquirer-{$keval[0]}"] == 'on') {
-						$bank_code = $keval[0];
-						$bank_name = (isset($keval[1]) ? $keval[1] : '--Un-Named Acquirer Bank Name--');
-						$bank_promo = "";
-						if (isset($params["Payment-Installment-Promoid-{$keval[0]}"])) {
-							$bank_promo = $params["Payment-Installment-Promoid-{$keval[0]}"];
-						}
-						$InstallmentBanks[] = array(
-							'code'				=> $bank_code,
-							'name'				=> $bank_name,
-							'promo'				=> $bank_promo,
-						);
-					}
-				}
-			}
-		}
-	}
-	// Available Tenors
-	$InstallmentTenors = array();
-	$getDokuPaymentTenors = dokuhosted_DokuAdmin::getDokuPaymentConfigs('tenors');
-	if (count($getDokuPaymentTenors) > 0) {
-		foreach ($getDokuPaymentTenors as $keval) {
-			if (isset($keval[0])) {
-				if (isset($params["Payment-Installment-Tenor-{$keval[0]}"])) {
-					if ($params["Payment-Installment-Tenor-{$keval[0]}"] == 'on') {
-						$tenor_code = (string)$keval[0];
-						$tenor_name = (isset($keval[1]) ? $keval[1] : '--Un-Named Tenor Installment Name--');
-						$InstallmentTenors[] = array(
-							'code'				=> (string)$tenor_code,
-							'name'				=> $tenor_name,
-						);
-					}
-				}
-			}
-		}
-	}
-	*/
-	//------------------------------------------------------------------------------------------------
 	
 	
 	//Log for orders
@@ -1227,13 +1132,6 @@ function dokuhosted_link($params) {
 									$tenor_printout[$bank_code][$tenorKey] .= (isset($tenorVal['promo']) ? strval($tenorVal['promo']) : '');
 									$tenor_printout[$bank_code][$tenorKey] .= "|";
 									$tenor_printout[$bank_code][$tenorKey] .= (isset($tenorVal['name']) ? strval($tenorVal['name']) : '');
-									/*
-									$tenor_printout[] = '<select id="TENOR" name="TENOR">';
-									$tenor_printout[] .= '<option value="' . (isset($tenorVal['code']) ? strval($tenorVal['code']) : '') . '">';
-									$tenor_printout[] .= (isset($tenorVal['name']) ? $tenorVal['name'] : '-');
-									$tenor_printout[] .= '</option>';
-									$tenor_printout[] .= '</select>';
-									*/
 								}
 							}
 						}
@@ -1249,14 +1147,6 @@ function dokuhosted_link($params) {
 			$returnHtml .= '</select>';
 		$returnHtml .= '</div>';
 	$returnHtml .= '</div>';
-	//--------------------------------------------------------------------------------------------------------------------
-	
-	//echo "<pre>";
-	//print_r($tenor_printout);
-	//exit;
-	
-	
-	//---------------------------------------------------
 	// End of Form
 	$returnHtml .= '</form>';
 	// Create padding
@@ -1433,31 +1323,6 @@ function dokuhosted_link($params) {
 			
 	$returnHtml .= $js_submit;
 	
-	
-	// Show @params values
-	//$returnHtml .= '<pre>';
-	//$returnHtml .= print_r($params, true);
-	//$returnHtml .= '</pre>';
-	
-	
-	
-	
-	// Debug all params values
-	/*
-	$returnHtml .= '<div id="params-values all-params" style="show:hidden;">';
-	$returnHtml .= '<pre>';
-	//$returnHtml .= "\n<!--\n";
-	$returnHtml .= print_r($params, true);
-	//$returnHtml .= "\n-->\n";
-	$returnHtml .= '</pre>';
-	$returnHtml .= '</div>';
-	*/
-	/*
-	
-	
-	
-	$returnHtml .= "</pre>";
-	*/
     return $returnHtml;
 }
 

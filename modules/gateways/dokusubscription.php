@@ -8,7 +8,7 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
- Version: V1.0
+ Version: V1.1
  Released: Sept 18, 2017
  --------------------------
  *
@@ -33,7 +33,7 @@
  */
 function dokusubscription_MetaData() {
     return array(
-        'DisplayName' => 'DOKU - Subscription',
+        'DisplayName' => 'DOKU Account Billing',
         'APIVersion' => '1.1', // Use API Version 1.1
         'DisableLocalCredtCardInput' => true,
         'TokenisedStorage' => false,
@@ -205,7 +205,7 @@ function dokusubscription_config() {
         // defined here for backwards compatibility
         'FriendlyName' => array(
             'Type' => 'System',
-            'Value' => 'DOKU - Subscription',
+            'Value' => 'DOKU Account Billing',
         ),
         // a text field type allows for single line text input
 		# Sandbox
@@ -706,8 +706,6 @@ function dokusubscription_link($params) {
 				break;
 			}
 		}
-		//$params_input['subscription']['EXECUTEMONTH'] = $DateObject->format('M');
-		//$params_input['subscription']['EXECUTEMONTH'] = strtoupper($params_input['subscription']['EXECUTEMONTH']);
 		$params_input['subscription']['EXECUTEMONTH'] = implode(",", $Invoice_BillCycle_Months);
 	}
 	if (!$error) {
@@ -737,18 +735,6 @@ function dokusubscription_link($params) {
 	}
 	//-------------------------------------------------------
 	if (!$error) {
-		/*
-		echo "<pre>";
-		if ($OrderData) {
-			echo "<hr/>";
-			print_r($OrderData);
-		}
-		if ($InvoiceData) {
-			echo "<hr/>";
-			print_r($InvoiceData);
-		}
-		exit;
-		*/
 		
 		# Create Subscription Payment Structure
 		$createPaymentStructure = $DokuPayment->create_payment_structure('subscription', 0, $params_input, $user_input, $params_input['items'], $user_input['shipping_address']);
@@ -799,13 +785,6 @@ function dokusubscription_link($params) {
 				form_object.submit();
 			}, false)";
 			$htmlFormSubmit .= '</script>';
-			//------------------------------------------
-			/*
-			$htmlFormSubmit .= '<script type="text/javascript">';
-			$htmlFormSubmit .= 'var html_form = document.getElementById("RegistrationNewCard");';
-			$htmlFormSubmit .= 'html_form.submit();';
-			$htmlFormSubmit .= '</script>';
-			*/
 		}
 	}
 	if (!$error) {
@@ -816,96 +795,10 @@ function dokusubscription_link($params) {
 		return false;
 	}
 	
-	/*
-	if (!$error) {
-		echo $htmlForm;
-		echo $htmlFormSubmit;
-			
-		
-	
-	}
-	exit;
-	
-	if (!$error) {
-		
-			
-			
-			
-			
-			
-			$htmlForm .= '<form name="RegistrationNewCard" id="RegistrationNewCard" class="font-reg" action="'. $DokuPayment->endpoint['request'] . '" method="post">';
-			if (count($rawdata['payment_form']) > 0) {
-				foreach ($rawdata['payment_form'] as $key => $val) {
-					//$htmlForm .= "{$key}: <input type='text' id='{$key}' name='{$key}' value='{$val}' />";
-					$htmlForm .= "<input type='hidden' id='{$key}' name='{$key}' value='{$val}' />";
-					$htmlForm .= "<br/>";
-				}
-			}
-			$htmlForm .= '</form>';
-			
-			$htmlFormSubmit .= '<script type="text/javascript">';
-			$htmlFormSubmit .= 'var html_form = document.getElementById("RegistrationNewCard");';
-			$htmlFormSubmit .= 'html_form.submit();';
-			$htmlFormSubmit .= '</script>';
-			
-			
-			
-			echo "<pre>";
-			print_r($params);
-				
-			if ($InvoiceData) {
-				echo "<hr/>";
-				print_r($InvoiceData);
-			}
-			
-			exit;
-			
-			
-			
-			
-			
-			
-			echo $htmlForm;
-			echo $htmlFormSubmit;
-			exit;
-			
-			
-	}
-	*/
-	//$curlData = curlCall($DokuPayment->endpoint['request'], $makepayment_data);
-	//$tokenize = array(
-	//	"status" => "error",
-	//	"rawdata" => $rawdata
-	//);
-	
-	//
-	//$tokenize = array(
-	//	'status'			=> 'success',
-	//	'transid'			=> "{$params['invoiceid']}_{$DokuPayment->generate_transaction_id()}",
-	//	'rawdata'			=> $rawdata,
-	//);
-	//
-	//return $tokenize;
 }
 function dokusubscription_nolocalcc($params) {
 	return true;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /**
  * Refund transaction.
