@@ -12,10 +12,7 @@
  Released: Sept 18, 2017
  --------------------------
  *
- * For more information, please refer to the online documentation.
- *
- * @see https://developers.whmcs.com/payment-gateways/
- *
+ * For more information, about this modules payment please kindly visit our website at www.doku.com
  *
  */
 // Require libraries needed for gateway module functions.

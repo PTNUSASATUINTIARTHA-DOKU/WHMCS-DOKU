@@ -34,7 +34,6 @@ class dokuhosted_DokuPayment {
 		# Headers
 		$this->set_dokupayment_headers();
 		$this->add_dokupayment_headers('Content-type', 'application/x-www-form-urlencoded');
-		//$this->add_dokupayment_headers('Authorization', "Basic {$this->authorization['authorize']}");
 	}
 	public static function init($configs) {
         if (!self::$instance) {
@@ -58,18 +57,18 @@ class dokuhosted_DokuPayment {
 			array('09', 'Mandiri Multipayment'),
 			array('10', 'ATM Mandiri VA LITE'),
 			array('11', 'ATM Mandiri VA'),
-			array('12', 'PayPal'),
-			array('13', 'BNI Debit Online (VCN)'),
+			//array('12', 'PayPal'),
+			//array('13', 'BNI Debit Online (VCN)'),
 			array('14', 'Alfamart'),
-			array('15', 'Credit Card Visa/Master Multi Currency'),
+			//array('15', 'Credit Card Visa/Master Multi Currency'),
 			array('16', 'Tokenization'),
-			array('18', 'KlikPayBCA'),
+			//array('18', 'KlikPayBCA'),
 			array('19', 'CIMB Clicks'),
 			array('20', 'PTPOS'),
 			array('21', 'Sinarmas VA Full'),
 			array('22', 'Sinarmas VA Lite'),
 			array('23', 'MOTO'),
-			array('24', 'Klikpay BCA Debit'),
+			//array('24', 'Klikpay BCA Debit'),
 			array('25', 'Bank Muamalat Indonesia'),
 			array('26', 'Danamon Online Banking'),
 		);
@@ -97,7 +96,6 @@ class dokuhosted_DokuPayment {
 		return false;
 	}
 	//---------------------------
-	# Example : $this->create_payment_structure('create', 0, $params_input = array(), $user_input = array(), $item_data = array(), $shipping_data = array());
 	function create_payment_structure($method, $paymentcode, $params_input, $user_input = array(), $item_data = array(), $shipping_data = null) {
 		$PaymentStructure = array();
 		switch(strtolower($method)) {
@@ -373,7 +371,6 @@ class dokuhosted_DokuPayment {
 				$string .= strval($keval);
 			}
 		}
-		//$string = implode("", $string_words);
 		$string = trim(strval($string));
 		return $string;
 	}
@@ -585,8 +582,6 @@ class dokuhosted_DokuPayment {
 		}
 		curl_setopt($ch, CURLOPT_USERAGENT, $UA);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-		//curl_setopt($ch, CURLOPT_COOKIE, $cookie_file);
-		//curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie_file);
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 		curl_setopt($ch, CURLOPT_ENCODING, "");
 		curl_setopt($ch, CURLOPT_AUTOREFERER, true);
@@ -735,8 +730,6 @@ class dokuhosted_DokuPayment {
 	}
 	function render_custom_arraytoxml($obj_xml) {
 		$xml_formatted = $obj_xml->asXML();
-		//$xml_formatted = str_replace('<e>', '', $xml_formatted);
-		//$xml_formatted = str_replace('</e>', '', $xml_formatted);
 		$domXML = new DOMDocument('1.0');
 		$domXML->preserveWhiteSpace = false;
 		$domXML->formatOutput = true;
@@ -846,7 +839,6 @@ class dokuhosted_DokuPayment {
 		if (count($params_input) > 0) {
 			foreach ($params_input as $key => $keval) {
 				if (!is_array($keval) || (!is_object($keval))) {
-					//$keval = filter_var($keval, FILTER_SANITIZE_STRING);
 					$keval = filter_var($keval, FILTER_SANITIZE_URL);
 				}
 				$sanitized[$key] = $keval;

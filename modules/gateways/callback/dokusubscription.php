@@ -1,20 +1,19 @@
 <?php
 /**
- * WHMCS Sample Payment Callback File
+ * WHMCS DOKU Payment Gateway Module
  *
- * This sample file demonstrates how a payment gateway callback should be
- * handled within WHMCS.
+ * DOKU Hosted Payment Gateway Module allow you to integrate DOKU Hosted with the
+ * WHMCS platform.
  *
- * It demonstrates verifying that the payment gateway module is active,
- * validating an Invoice ID, checking for the existence of a Transaction ID,
- * Logging the Transaction for debugging and Adding Payment to an Invoice.
+ * This Module Information:
+ --------------------------
+ PT Nusa Satu Inti Artha (DOKU)
+ Version: V1.2
+ Released: Sept 18, 2017
+ --------------------------
  *
- * For more information, please refer to the online documentation.
+ * For more information, about this modules payment please kindly visit our website at www.doku.com
  *
- * @see https://developers.whmcs.com/payment-gateways/callbacks/
- *
- * @copyright Copyright (c) WHMCS Limited 2017
- * @license http://www.whmcs.com/license/ WHMCS Eula
  */
 /*
 error_reporting(E_ALL);

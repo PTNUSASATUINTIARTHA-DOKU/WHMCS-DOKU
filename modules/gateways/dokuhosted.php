@@ -8,14 +8,11 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
- Version: V1.1
+ Version: V1.2
  Released: Sept 18, 2017
  --------------------------
  *
- * For more information, please refer to the online documentation.
- *
- * @see https://developers.whmcs.com/payment-gateways/
- *
+ * For more information, about this modules payment please kindly visit our website at www.doku.com
  *
  */
  
