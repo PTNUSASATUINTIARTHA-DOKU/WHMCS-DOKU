@@ -23,7 +23,7 @@ With this module payment you can accept online payment on your WHMCS using DOKU 
 2. Go to menu Setup -> Payments -> Payment Gateways.
 3. There are will be 2 payment type show up there in your payment gateway settings, choose the payment method you prefer:
     - DOKU Merchant = For standard payment
-    - DOKU Account Billing = for recurring / subscription
+    - DOKU Account Billing = For recurring / subscription as advance payment
 4. Then choose Setup -> Payments -> Payment Gateways -> Manage Existing Gateways
 5. Fill the input as instructed on the screen. 
 6. Click Save Changes
