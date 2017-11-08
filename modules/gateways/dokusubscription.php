@@ -259,15 +259,6 @@ function dokusubscription_config() {
             'Default' => '',
             'Description' => 'Enter your Mall ID here',
         ),
-		/*
-        'ShopName_Live' => array(
-            'FriendlyName' => '<span style="color:red;font-weight:bold;">(*)</span>Production: Shop Name',
-            'Type' => 'text',
-            'Size' => '25',
-            'Default' => '',
-            'Description' => 'Enter Shop Name here',
-        ),
-		*/
 		'ChainMerchant_Live' => array(
             'FriendlyName' => '<span style="color:red;font-weight:bold;">(*)</span>Production: Chain Merchant Name (Default is: NA)',
             'Type' => 'text',
@@ -317,11 +308,6 @@ function dokusubscription_config() {
 			'FriendlyName' => "Use Identify?", 
 			'Type' => "yesno",
 			'Description' => "Tick this box to enable DOKU Identify", 
-		),
-		"Void-Enabled" => array(
-			'FriendlyName' => "Use Void?", 
-			'Type' => "yesno",
-			'Description' => "Tick this box to enable Payment Void", 
 		),
 		####################
 		"PaymentCheck-Enabled" => array(
