@@ -28,7 +28,7 @@ With this module payment you can accept online payment on your WHMCS using DOKU 
 5. Fill the input as instructed on the screen. 
 6. Click Save Changes
 
-For more information regarding our installation and configuration please kindly to visit our [Github WIKI](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/wiki) if you have any issue please bear me to open the [issue](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/issues)
+For more information regarding our installation and configuration please kindly to visit our [Github WIKI](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/wiki) if you have any further assistant or isssue please bear to open the [issue in our github] (https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/issues) 
 
 #### NOTES ####
 
