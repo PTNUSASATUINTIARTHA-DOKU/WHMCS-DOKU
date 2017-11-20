@@ -1298,24 +1298,34 @@ function dokuhosted_link($params) {
 	$returnHtml .= $js;
 	$js_submit = '<script type="text/javascript">';
 	$js_submit .= 'function onSubmitToPayment() {
-		var payment_channels = document.getElementById("PAYMENTCHANNEL");
-		var payment_channels_value = payment_channels.value;
-		var installment_tenor_promo = document.getElementById("TENOR_PROMO");
-		var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER"), add_installment_tenor = document.getElementById("TENOR"), add_installment_promoid = document.getElementById("PROMOID");
-		if (payment_channels_value == "01") {
-			payment_channels.value = "15";
-			var isi_tenor_dan_promo = installment_tenor_promo.value.split("|");
-			add_installment_tenor.value = isi_tenor_dan_promo[0];
-			add_installment_promoid.value = isi_tenor_dan_promo[1];
-			var isi_installment_acquirer = add_installment_acquirer.value.split("-");
-			add_installment_acquirer.value = isi_installment_acquirer[0];
-		} else {
-			add_installment_acquirer.remove();
-			add_installment_promoid.remove();
-			add_installment_tenor.remove();
-		}
-		document.getElementById("formRedirect").submit();
-	}';
+			var payment_channels = document.getElementById("PAYMENTCHANNEL");
+			var payment_channels_value = payment_channels.value;
+			var installment_tenor_promo = document.getElementById("TENOR_PROMO");
+			var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER"), add_installment_tenor = document.getElementById("TENOR"), add_installment_promoid = document.getElementById("PROMOID");
+			if (payment_channels_value == "01") {
+			 payment_channels.value = "15";
+			 var isi_tenor_dan_promo = installment_tenor_promo.value.split("|");
+			 add_installment_tenor.value = isi_tenor_dan_promo[0];
+			 add_installment_promoid.value = isi_tenor_dan_promo[1];
+			 var isi_installment_acquirer = add_installment_acquirer.value.split("-");
+			 add_installment_acquirer.value = isi_installment_acquirer[0];
+			} else {
+			 var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER");
+			 var add_installment_tenor = document.getElementById("TENOR");
+			 var add_installment_promoid = document.getElementById("PROMOID");
+			 var add_installment_tenorpromo = document.getElementById("TENOR_PROMO");
+			 add_installment_acquirer.remove();
+			 add_installment_tenor.remove();
+			 add_installment_promoid.remove();
+			 add_installment_tenorpromo.remove();
+			 
+			 add_installment_acquirer.removeAttribute("name");
+			 add_installment_tenor.removeAttribute("name");
+			 add_installment_promoid.removeAttribute("name");
+			 add_installment_tenorpromo.removeAttribute("name");
+			}
+			document.getElementById("formRedirect").submit();
+		   }';
 	$js_submit .= '</script>';
 			
 	$returnHtml .= $js_submit;
