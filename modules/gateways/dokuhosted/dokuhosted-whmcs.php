@@ -42,6 +42,52 @@ class dokuhosted_DokuPayment {
         return self::$instance;
     }
 	//---------------------
+	function get_virtual_channels() {
+		// Include @DOKUCONFIGS
+		$configfile = (dirname(__FILE__). '/dokuhosted-config.php');
+		if (!file_exists($configfile)) {
+			Exit("Required configs file does not exists.");
+		}
+		include($configfile);
+		if (!isset($DOKUCONFIGS)) {
+			Exit("There is no DOKUCONFIGS of included config file.");
+		}
+		$paymentchannels = array();
+		if (isset($DOKUCONFIGS['virtualchannels'])) {
+			return $DOKUCONFIGS['virtualchannels'];
+		}
+		return FALSE;
+	}
+	function get_paymentchannel_name($code = '00') {
+		// Include @DOKUCONFIGS
+		$configfile = (dirname(__FILE__). '/dokuhosted-config.php');
+		if (!file_exists($configfile)) {
+			Exit("Required configs file does not exists.");
+		}
+		include($configfile);
+		if (!isset($DOKUCONFIGS['paymentchannels'])) {
+			Exit("There is no DOKUCONFIGS of included config file.");
+		}
+		$code = (is_string($code) || is_numeric($code)) ? sprintf('%02s', $code) : '00';
+		$paymentchannels = array();
+		if (isset($DOKUCONFIGS['paymentchannels'])) {
+			if (is_array($DOKUCONFIGS['paymentchannels']) && (count($DOKUCONFIGS['paymentchannels']) > 0)) {
+				foreach ($DOKUCONFIGS['paymentchannels'] as $key => $val) {
+					if (isset($val[0])) {
+						$channel_key = (is_string($val[0]) || is_numeric($val[0])) ? sprintf('%02s', $val[0]) : '00';
+					} else {
+						$channel_key = '00';
+					}
+					$paymentchannels[$channel_key] = (isset($val[1]) ? $val[1] : '');
+				}
+			}
+		}
+		if (isset($paymentchannels[$code])) {
+			$paymentchannels[$code] = (is_string($paymentchannels[$code]) ? $paymentchannels[$code] : '');
+			return $paymentchannels[$code];
+		}
+		return FALSE;
+	}
 	function get_paymentchannel($code = 4) {
 		$code = (int)$code;
 		$paymentchannels = array(

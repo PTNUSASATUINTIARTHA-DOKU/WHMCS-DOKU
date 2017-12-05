@@ -44,4 +44,14 @@ $DOKUCONFIGS = array(
 		array('06', '06 Bulan'),
 		array('12', '12 Bulan'),
 	),
+	'virtualchannels' => array(
+		'29', 
+		'31', 
+		'32', 
+		'33', 
+		'34', 
+		'35', 
+		'36', 
+		'41',
+	),
 );

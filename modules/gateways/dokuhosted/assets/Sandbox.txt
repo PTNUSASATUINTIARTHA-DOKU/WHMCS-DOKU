@@ -1,0 +1,7 @@
+Danamon Online-Banking
+Username: admin
+Password: admin
+--
+Credit Card Visa/Mastercard
+Number 4111-1111-1111-1111
+CVV: 869

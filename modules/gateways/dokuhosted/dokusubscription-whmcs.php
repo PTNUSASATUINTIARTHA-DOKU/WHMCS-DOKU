@@ -38,6 +38,7 @@ class dokusubscription_DokuPayment {
 		# Headers
 		$this->set_dokupayment_headers();
 		$this->add_dokupayment_headers('Content-type', 'application/x-www-form-urlencoded');
+		//$this->add_dokupayment_headers('Authorization', "Basic {$this->authorization['authorize']}");
 	}
 	public static function init($configs) {
         if (!self::$instance) {
@@ -579,6 +580,7 @@ class dokusubscription_DokuPayment {
 				$string .= strval($keval);
 			}
 		}
+		//$string = implode("", $string_words);
 		$string = trim(strval($string));
 		return $string;
 	}
@@ -889,6 +891,8 @@ class dokusubscription_DokuPayment {
 		}
 		curl_setopt($ch, CURLOPT_USERAGENT, $UA);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		//curl_setopt($ch, CURLOPT_COOKIE, $cookie_file);
+		//curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie_file);
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 		curl_setopt($ch, CURLOPT_ENCODING, "");
 		curl_setopt($ch, CURLOPT_AUTOREFERER, true);
@@ -1037,6 +1041,8 @@ class dokusubscription_DokuPayment {
 	}
 	function render_custom_arraytoxml($obj_xml) {
 		$xml_formatted = $obj_xml->asXML();
+		//$xml_formatted = str_replace('<e>', '', $xml_formatted);
+		//$xml_formatted = str_replace('</e>', '', $xml_formatted);
 		$domXML = new DOMDocument('1.0');
 		$domXML->preserveWhiteSpace = false;
 		$domXML->formatOutput = true;
