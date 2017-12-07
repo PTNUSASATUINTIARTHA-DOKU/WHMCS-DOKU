@@ -526,13 +526,6 @@ switch (strtolower($CallbackPage)) {
 					$Redirect_Url .= ((substr($systemUrl, -1) == '/') ? '' : '/');
 					$Redirect_Url .= "viewinvoice.php?id={$invoiceId}";
 				}
-				$data['clientid'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-				$data['stats'] = true;
-				$userData = localAPI('GetClientsDetails', $data, $localApi['username']);
-				if (!isset($userData['email'])) {
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Cannot get userData Details from GetClientsDetails().";
-				}
 			} else {
 				$doku_error = true;
 				$doku_error_msg[] = "STOP : Local API Result not get invoiceid of InvoiceData from GetInvoice().";
@@ -551,8 +544,9 @@ switch (strtolower($CallbackPage)) {
 			$params_input['transaction_va_reference'] = (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : '');
 			$params_input['transaction_va_amount'] = (isset($doku_ipn_params['body']['AMOUNT']) ? $doku_ipn_params['body']['AMOUNT'] : '');
 			$params_input['transaction_va_amount'] = number_format($params_input['transaction_va_amount'], 2);
+			$params_input['transaction_va_amount'] = "Rp. {$params_input['transaction_va_amount']}";
 			$params_input['transaction_va_duedate'] = isset($InvoiceData['duedate']) ? $InvoiceData['duedate'] : '';
-			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (time() + 360));
+			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (time() + 21600));
 			$params_input['transaction_va_link'] = $Redirect_Url;
 			// Trigger
 			if (in_array($params_input['transaction_va_channel_code'], $params_input['transaction_va_channels'])) {
