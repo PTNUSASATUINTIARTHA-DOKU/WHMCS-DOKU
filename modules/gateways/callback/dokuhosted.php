@@ -154,6 +154,7 @@ switch (strtolower($CallbackPage)) {
 			$InvoiceData = localAPI('GetInvoice', $data, $localApi['username']);
 			print_r($InvoiceData);
 			$data['id'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
+			//(isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
 			$data['customtype'] = 'general';
 			$data['customsubject'] = 'Payment With Doku Merchant';
 			$data['custommessage'] = '<table class="table table-info" style="border: 1px solid #cccccc; width: 100%;" border="0" cellspacing="2" cellpadding="4"><thead><tr><th colspan="2">Detail Virtual Account untuk Pembayaran Pesanan Anda</th></tr></thead><tbody><tr><th style="font-weight: bold; border-bottom: 1px solid #ccc;">{$transaction_va_channel_name}</th></tr></tbody><tbody><tr><td>Nomor Referensi</td><td>{$transaction_va_reference}</td></tr><tr><td>ID Transaksi</td><td>{$transaction_va_reference}</td></tr><tr><td>Nomor Virtual Account</td><td>{$transaction_va_code}</td></tr><tr><td>Jumlah</td><td>{$transaction_va_amount}</td></tr><tr><td>Tanggal Expired</td><td>{$transaction_va_duedate}</td></tr></tbody><tfoot><tr><td colspan="2"><div class="links"><a href="{$transaction_va_link}">{$transaction_va_link}</a></div></td></tr></tfoot></table>';
@@ -165,6 +166,7 @@ switch (strtolower($CallbackPage)) {
 			$data['clientid'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
 			$data['stats'] = true;
 			$userData = localAPI('GetClientsDetails', $data, $localApi['username']);
+			//$orderData = mysql_fetch_assoc(select_query('tblorders', 'userid,id,paymentmethod,orderdata', ["invoiceid" => $invoiceId]));
 			print_r($userData);
 		}
 		exit;
@@ -205,6 +207,30 @@ switch (strtolower($CallbackPage)) {
 			$dokuparams['TRANSIDMERCHANT'] = (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : $dokuparams['TRANSIDMERCHANT']);
 		}
 		$transaction_id_part = substr($dokuparams['TRANSIDMERCHANT'], 0, 14);
+		/*
+		if (!$doku_error) {
+			try {
+				$transaction_id_part = date_create_from_format('YmdHis', $transaction_id_part);
+			} catch (Exception $ex) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : Exception error of date-created from form: {$ex->getMessage()}.";
+			}
+		}
+		if (!$doku_error) {
+			if (!strtotime(date_format($transaction_id_part, 'Y-m-d H:i:s'))) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : Transaction id part not in Dateformat structured.";
+			}
+		}
+		if (!$doku_error) {
+			$transaction_id_part = date_format($transaction_id_part, 'YmdHis');
+			$merchant_transaction = explode("{$transaction_id_part}", $dokuparams['TRANSIDMERCHANT']);
+			if (!isset($merchant_transaction[1])) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : There is no Transaction-id from IPN Callback as expected: #DATETIME#TRANSID.";
+			}
+		}
+		*/
 		if (!$doku_error) {
 			$merchant_transaction = array(
 				0 => FALSE,
@@ -380,6 +406,32 @@ switch (strtolower($CallbackPage)) {
 				$doku_error_msg[] = "STOP : Array or Object return for TRANSIDMERCHANT.";
 			}
 		}
+		/*
+		if (!$doku_error) {
+			$transaction_id = $dokuparams['TRANSIDMERCHANT'];
+			$transaction_id_part = substr($dokuparams['TRANSIDMERCHANT'], 0, 14);
+			try {
+				$transaction_id_part = date_create_from_format('YmdHis', $transaction_id_part);
+			} catch (Exception $ex) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : Exception error of date-created from form: {$ex->getMessage()}.";
+			}
+		}
+		if (!$doku_error) {
+			if (!strtotime(date_format($transaction_id_part, 'Y-m-d H:i:s'))) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : Transaction id part not in Dateformat structured.";
+			}
+		}
+		if (!$doku_error) {
+			$transaction_id_part = date_format($transaction_id_part, 'YmdHis');
+			$merchant_transaction = explode("{$transaction_id_part}", $dokuparams['TRANSIDMERCHANT']);
+			if (!isset($merchant_transaction[1])) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : There is no Transaction-id from IPN Callback as expected: #DATETIME#TRANSID.";
+			}
+		}
+		*/
 		#########################################
 		if (!$doku_error) {
 			$merchant_transaction = array(
@@ -462,6 +514,10 @@ switch (strtolower($CallbackPage)) {
 				unset($localApi['data']['id']);
 			}
 			$localApi['data']['invoiceid'] = $invoiceId;
+			//unset($localApi['data']['invoiceid']);
+			//$localApi['data']['id'] = $invoiceId;
+			//$InvoiceData = localAPI($localApi['command'], $localApi['data'], $localApi['username']);
+			// query localApi from invoiceid
 			$InvoiceData = localAPI('GetInvoice', $localApi['data'], $localApi['username']);
 			if (isset($InvoiceData['invoiceid']) && isset($InvoiceData['userid'])) {
 				if (intval($InvoiceData['invoiceid']) > 0) {
@@ -496,6 +552,7 @@ switch (strtolower($CallbackPage)) {
 			$params_input['transaction_va_amount'] = (isset($doku_ipn_params['body']['AMOUNT']) ? $doku_ipn_params['body']['AMOUNT'] : '');
 			$params_input['transaction_va_amount'] = number_format($params_input['transaction_va_amount'], 2);
 			$params_input['transaction_va_duedate'] = isset($InvoiceData['duedate']) ? $InvoiceData['duedate'] : '';
+			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (time() + 360));
 			$params_input['transaction_va_link'] = $Redirect_Url;
 			// Trigger
 			if (in_array($params_input['transaction_va_channel_code'], $params_input['transaction_va_channels'])) {
@@ -509,6 +566,7 @@ switch (strtolower($CallbackPage)) {
 					break;
 				}
 				try {
+					//$data['messagename'] = 'DOKU_Payment';
 					$data['id'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
 					$data['customtype'] = 'general';
 					$data['customsubject'] = "Payment With Doku Merchant - {$params_input['transaction_va_channel_name']}";
@@ -520,9 +578,18 @@ switch (strtolower($CallbackPage)) {
 					$doku_error_msg[] = "STOP : Send email details is going error with exception: {$ex->getMessage()}";
 				}
 			}
-			
 		}
-		
+		if (!$error) {
+			/*
+			$data['clientid'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
+			$data['stats'] = true;
+			$userData = localAPI('GetClientsDetails', $data, $localApi['username']);
+			if (!isset($userData['email'])) {
+				$doku_error = true;
+				$doku_error_msg[] = "STOP : Cannot get userData Details from GetClientsDetails().";
+			}
+			*/
+		}
 		
 		$orders_debug = array(
 			'order_id'				=> 0,
