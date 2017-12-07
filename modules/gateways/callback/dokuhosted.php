@@ -546,7 +546,7 @@ switch (strtolower($CallbackPage)) {
 			$params_input['transaction_va_amount'] = number_format($params_input['transaction_va_amount'], 2);
 			$params_input['transaction_va_amount'] = "Rp. {$params_input['transaction_va_amount']}";
 			$params_input['transaction_va_duedate'] = isset($InvoiceData['duedate']) ? $InvoiceData['duedate'] : '';
-			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (time() + 21600));
+			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (strtotime($Datezone->format('Y-m-d H:i:s')) + 21600));
 			$params_input['transaction_va_link'] = $Redirect_Url;
 			// Trigger
 			if (in_array($params_input['transaction_va_channel_code'], $params_input['transaction_va_channels'])) {
