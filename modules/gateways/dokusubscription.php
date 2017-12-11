@@ -8,7 +8,6 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
- Version: V1.2
  Released: Sept 18, 2017
  --------------------------
  *
@@ -748,7 +747,7 @@ function dokusubscription_link($params) {
 			$headers = $DokuPayment->create_curl_headers($DokuPayment->dokupayment_headers);
 			//$curlData = $DokuPayment->create_curl_request('POST', $DokuPayment->endpoint['request'], 'WHMCS Payment Plugin (http://www.doku.com)', $headers, $rawdata['payment_form'], 30);
 			//logTransaction($moduleName, $curlData, "(WHMCS) SUBSCRIPTION-REQUEST");
-			$htmlForm .= "<p><a id='submit-doku-form' href='javascript:;'><img alt='doku-checkout' src='{$systemUrl}" . ((substr($systemUrl, -1) == '/') ? '' : '/') . "modules/gateways/dokuhosted/assets/doku-button.png' /></a></p>";
+			$htmlForm .= "<p><a id='submit-doku-form' href='javascript:;'><img alt='doku-checkout' src='{$systemUrl}" . ((substr($systemUrl, -1) == '/') ? '' : '/') . "modules/gateways/dokuhosted/assets/doku-button.png' width='120' height='34'/></a></p>";
 			$htmlForm .= '<form name="RegistrationNewCard" id="RegistrationNewCard" class="font-reg" action="'. $DokuPayment->endpoint['request'] . '" method="post">';
 			if (count($rawdata['payment_form']) > 0) {
 				foreach ($rawdata['payment_form'] as $key => $val) {
