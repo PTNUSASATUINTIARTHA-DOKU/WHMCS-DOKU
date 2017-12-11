@@ -8,7 +8,6 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
- Version: V1.2
  Released: Sept 18, 2017
  --------------------------
  *
