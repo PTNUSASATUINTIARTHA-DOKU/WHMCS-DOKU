@@ -186,6 +186,7 @@ function dokuhosted_config() {
             'Value' => 'DOKU Merchant',
 			'Description' => 'DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on http://www.doku.com',
         ),
+<<<<<<< HEAD
 		'Pembatas-Description-Payment-Gateway' => array(
 			'FriendlyName' => '',
 			'Type' => 'hidden',
@@ -201,6 +202,8 @@ function dokuhosted_config() {
 			'Default' => 'DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on http://www.doku.com',
 			'Description' => '',
 		),
+=======
+>>>>>>> ea563bf7e9f21f25c55eb117477e51594c680776
         // a text field type allows for single line text input
 		# Development
 		//-------------
@@ -718,10 +721,14 @@ function dokuhosted_link($params) {
     $postfields['callback_url'] = $systemUrl . ((substr($systemUrl, -1) == '/') ? '' : '/') . 'modules/gateways/callback/' . $moduleName . '.php';
     $postfields['return_url'] = $returnUrl;
 	// Create Unique invoice_id
+<<<<<<< HEAD
 	//-------------------------------
 	//$postfields['invoice_id'] = $postfields['invoice_id'] . '_' . (date('YmdHis', time()));
 	$postfields['invoice_id'] = "{$postfields['invoice_id']}_{$postfields['invoice_id']}";
 	//-------------------------------
+=======
+	$postfields['invoice_id'] = $postfields['invoice_id'] . '_' . (date('YmdHis', time()));
+>>>>>>> ea563bf7e9f21f25c55eb117477e51594c680776
 	####postfields['invoice_id'] = $postfields['invoice_id'];
 	// AVAILABLE PAYMENT CHANNELS
 	$PaymentChannels = array();
@@ -1156,9 +1163,22 @@ function dokuhosted_link($params) {
 	// DOKU Description
 	$dokuDesc = (isset($params['Description-Payment-Gateway']) ? $params['Description-Payment-Gateway'] : '');
 	$dokuDesc = filter_var($dokuDesc, FILTER_SANITIZE_STRING);
+<<<<<<< HEAD
 	$returnHtml .= '<div class="row">';
 	$returnHtml .= '<div class="small-text"><img alt="doku" src="http://doku.com/themes/default/images/logo-doku-merchant.png" align="left" style="padding-right:12px;" />' . $dokuDesc . '</div>';
 	$returnHtml .= '</div>';
+=======
+	$dokuDesc = (is_string($dokuDesc) ? $dokuDesc : '');
+	//===========================
+	// DOKU Description as NULL
+	//===========================
+	$dokuDesc = "";
+	if (strlen($dokuDesc) > 0) {
+		$returnHtml .= '<div class="row">';
+		$returnHtml .= '<div class="small-text"><img alt="doku" src="http://doku.com/themes/default/images/logo-doku-merchant.png" align="left" style="padding-right:12px;" />' . $dokuDesc . '</div>';
+		$returnHtml .= '</div>';
+	}
+>>>>>>> ea563bf7e9f21f25c55eb117477e51594c680776
 	
 	//Javascript for payment-channel-placeholder
 	$js = "";
@@ -1295,7 +1315,11 @@ function dokuhosted_link($params) {
 	element.setAttribute("value", "TENOR-VALUE");
 	*/
 	// Submit button
+<<<<<<< HEAD
 	$returnHtml .= '<a href="javascript:;" onclick="javascript:onSubmitToPayment();"><img alt="'.$params['langpaynow'].'" src="/modules/gateways/dokuhosted/assets/doku-button.png" title="'.$params['langpaynow'].'" /></a>';
+=======
+	$returnHtml .= '<a href="javascript:;" onclick="javascript:onSubmitToPayment();"><img alt="'.$params['langpaynow'].'" src="/modules/gateways/dokuhosted/assets/doku-button.png" width="120" height="34" title="'.$params['langpaynow'].'" /></a>';
+>>>>>>> ea563bf7e9f21f25c55eb117477e51594c680776
 	
 	// Javascript for submit
 	$returnHtml .= $js;
