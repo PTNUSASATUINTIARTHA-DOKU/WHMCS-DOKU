@@ -8,1163 +8,1436 @@
  * This Module Information:
  --------------------------
  PT Nusa Satu Inti Artha (DOKU)
+ Version: V1.2
  Released: Sept 18, 2017
  --------------------------
  *
  * For more information, about this modules payment please kindly visit our website at www.doku.com
  *
  */
-// Require libraries needed for gateway module functions.
-require_once __DIR__ . '/../../../init.php';
-require_once __DIR__ . '/../../../includes/gatewayfunctions.php';
-require_once __DIR__ . '/../../../includes/invoicefunctions.php';
+ 
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
 
-// Require DokuPayment Lib
-$dokulib = (dirname(dirname(__FILE__)) . "/dokuhosted/dokuhosted-whmcs.php");
-if (!file_exists($dokulib)) {
-	exit("DokuPayment lib file not exists.");
+/**
+ * Define module related meta data.
+ *
+ * Values returned here are used to determine module related capabilities and
+ * settings.
+ *
+ * @see https://developers.whmcs.com/payment-gateways/meta-data-params/
+ *
+ * @return array
+ */
+function dokuhosted_MetaData() {
+    return array(
+        'DisplayName' => 'DOKU Merchant',
+        'APIVersion' => '1.2', // Use API Version 1.1
+        'DisableLocalCredtCardInput' => true,
+        'TokenisedStorage' => false,
+    );
 }
-// Detect module name from filename.
-$gatewayModuleName = basename(__FILE__, '.php');
-// Fetch gateway configuration parameters.
-$gatewayParams = getGatewayVariables($gatewayModuleName);
-$EDU_Enabled = (isset($gatewayParams['EDU-Enabled']) ? $gatewayParams['EDU-Enabled'] : '');
-$EDU_Enabled = (is_string($EDU_Enabled) ? strtolower($EDU_Enabled) : '');
-$EDU_Enabled = ((strtolower($EDU_Enabled) === strtolower('on')) ? 1 : 0);
-$Identify_Enabled = (isset($gatewayParams['Identify-Enabled']) ? $gatewayParams['Identify-Enabled'] : '');
-$Identify_Enabled = (is_string($Identify_Enabled) ? strtolower($Identify_Enabled) : '');
-$Identify_Enabled = (($Identify_Enabled === 'on') ? TRUE : FALSE);
-//------------------------------------------------------------------------------------------------
-// Void have operational hours (08.00 - 21.00 GMT+7)
-$Datezone = new DateTime(date('Y-m-d H:i:s', time()));
-$Datezone->setTimezone(new DateTimeZone("Asia/Bangkok"));
-if (((int)$Datezone->format('His') >= 85959) && ((int)$Datezone->format('His') <= 225959)) {
-	$Void_Enabled = (isset($gatewayParams['Void-Enabled']) ? $gatewayParams['Void-Enabled'] : '');
-	$Void_Enabled = (!is_array($Void_Enabled) ? trim($Void_Enabled) : '');
-	$Void_Enabled = ((strtolower($Void_Enabled) === strtolower('on')) ? TRUE : FALSE);
-} else {
-	$Void_Enabled = FALSE;
-}
-// Constant disabled VOID
-$Void_Enabled = FALSE;
-//------------------------------------------------------------------------------------------------
-$LocalApiAdminUsername = (isset($gatewayParams['Local-Api-Admin-Username']) ? $gatewayParams['Local-Api-Admin-Username'] : '');
-$Log_Enabled = FALSE;
-if (isset($gatewayParams['Log-Enabled'])) {
-	$Log_Enabled = ((strtolower($gatewayParams['Log-Enabled']) == 'on') ? TRUE : FALSE);
-}
-$PaymentCheck_Enabled = (isset($gatewayParams['PaymentCheck-Enabled']) ? $gatewayParams['PaymentCheck-Enabled'] : '');
-$PaymentCheck_Enabled = ((strtolower($PaymentCheck_Enabled) === strtolower('on')) ? TRUE : FALSE);
-// Die if module is not active.
-if (!$gatewayParams['type']) {
-    die("Module Not Activated");
-}
-$Environment = (isset($gatewayParams['Environment']) ? $gatewayParams['Environment'] : 'sandbox'); // Let sandbox as default
-$DokuConfigs = array(
-	'isofile'		=> 'dokuhosted/assets/iso3166.json',
-	'merchant'		=> array(
-		'mallid'			=> (isset($gatewayParams['MallId']) ? $gatewayParams['MallId'] : ''),
-		'shopname'			=> (isset($gatewayParams['ShopName']) ? $gatewayParams['ShopName'] : ''),
-		'chainmerchant'		=> (isset($gatewayParams['ChainMerchant']) ? $gatewayParams['ChainMerchant'] : ''),
-		'sharedkey'			=> (isset($gatewayParams['SharedKey']) ? $gatewayParams['SharedKey'] : ''),
-	),
-	'endpoint'		=> (is_string($Environment) ? strtolower($Environment) : 'sandbox'), // sandbox as default
-);
-if (class_exists('dokuhosted_DokuPayment')) {
-	$DokuPayment = new dokuhosted_DokuPayment($DokuConfigs);
-} else {
-	require_once($dokulib);
-	$DokuPayment = new dokuhosted_DokuPayment($DokuConfigs);
-}
-// Getting URL Querystring
-$doku_get = dokuhosted_DokuPayment::_GET();
-// Make Global @CallbackPage
-$CallbackPage = (isset($doku_get['page']) ? $doku_get['page'] : 'notify'); // notify as default-callback-page
-$CallbackPage = (is_string($CallbackPage) ? strtolower($CallbackPage) : 'notify');
-/*
-***************************************************************************
-*
-* IF IPN : $doku_ipn_params
-* IF Redirect : $doku_redirect_params
-*
-***************************************************************************
-*/
-$REQUEST_METHOD = (isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'HEAD');
-$REQUEST_METHOD_MSG = "";
-# Get Doku IPN Params:
-$doku_ipn_params = $DokuPayment->doku_incoming_callback();
-if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $doku_ipn_params, "({$REQUEST_METHOD}) Incoming Callback Params"); }
-# Get Doku Redirect Params from Request-Uri
-$doku_redirect_params = dokuhosted_DokuPayment::get_query_string();
-################################
-//------------------------------
-// Global Validation
-$doku_error = FALSE;
-$doku_error_msg = array();
-// Make GLOBAL @success
-$success = FALSE;
-//------------------------------
-// Make GLOBAL @checkCbTransID
-$checkCbTransID = FALSE;
-// Previously get 500 Internal Error for this transaction: checkCbTransID($transactionId);
-// Make GLOBAL @XMLPaymentStatus
-$XMLPaymentStatus = array();
-if ($EDU_Enabled > 0) {
-	$XMLPaymentStatus['edu-enabled'] = $EDU_Enabled;
-} else {
-	$XMLPaymentStatus['edu-enabled'] = 0;
-}
-// Make GLOBAL @StringVoidStatus
-$StringVoidStatus = "";
-/*
-// Use localAPI to handle and redirect user
-*/
-$localApi = array(
-	'command' 	=> 'GetInvoice', //'GetOrders',
-	'data'		=> array(
-		//'id' 				=> '', // Later updated on review case
-		'invoiceid' 		=> '', # Later updated on review case
-	),
-	'username'	=> $LocalApiAdminUsername, // Optional for WHMCS 7.2 and later
-);
-//------------------------------
-################################
-switch (strtolower($CallbackPage)) {
-	//------------------
-	// Debug Invoice
-	//------------------
-	case 'debug':
-		$invoiceId = (isset($doku_redirect_params['id']) ? $doku_redirect_params['id'] : '');
-		$invoiceId = (int)$invoiceId;
-		$cbInvoiceId = checkCbInvoiceID($invoiceId, $gatewayParams['paymentmethod']);
-		if ($invoiceId) {
-			echo "<pre>";
-			echo "{$invoiceId}";
-			echo "<hr/>";
-			echo $cbInvoiceId;
-			echo "<hr/>";
-			if (isset($localApi['data']['id'])) {
-				unset($localApi['data']['id']);
-			}
-			$data = array(
-				//'id' 				=> $invoiceId,
-				'invoiceid' 		=> $invoiceId,
-			);
-			$InvoiceData = localAPI('GetInvoice', $data, $localApi['username']);
-			print_r($InvoiceData);
-			$data['id'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-			//(isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-			$data['customtype'] = 'general';
-			$data['customsubject'] = 'Payment With Doku Merchant';
-			$data['custommessage'] = '<table class="table table-info" style="border: 1px solid #cccccc; width: 100%;" border="0" cellspacing="2" cellpadding="4"><thead><tr><th colspan="2">Detail Virtual Account untuk Pembayaran Pesanan Anda</th></tr></thead><tbody><tr><th style="font-weight: bold; border-bottom: 1px solid #ccc;">{$transaction_va_channel_name}</th></tr></tbody><tbody><tr><td>Nomor Referensi</td><td>{$transaction_va_reference}</td></tr><tr><td>ID Transaksi</td><td>{$transaction_va_reference}</td></tr><tr><td>Nomor Virtual Account</td><td>{$transaction_va_code}</td></tr><tr><td>Jumlah</td><td>{$transaction_va_amount}</td></tr><tr><td>Tanggal Expired</td><td>{$transaction_va_duedate}</td></tr></tbody><tfoot><tr><td colspan="2"><div class="links"><a href="{$transaction_va_link}">{$transaction_va_link}</a></div></td></tr></tfoot></table>';
-			$data['customvars'] = base64_encode(serialize($params_input));
-			$sendEmail = localAPI('SendEmail', $data, $localApi['username']);
-			print_r($sendEmail);
-			
-			
-			$data['clientid'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-			$data['stats'] = true;
-			$userData = localAPI('GetClientsDetails', $data, $localApi['username']);
-			//$orderData = mysql_fetch_assoc(select_query('tblorders', 'userid,id,paymentmethod,orderdata', ["invoiceid" => $invoiceId]));
-			print_r($userData);
+
+//---------------
+// URL show to admin page
+Class dokuhosted_DokuAdmin {
+	public static $notify = false;
+	public static $redirect = false;
+	public static $review = false;
+	public static $identify = false;
+	public static $DOKUCONFIGS;
+	public function __construct($configs = array()) {
+		$this->set_protocol(self::getDokuPaymentProtocol());
+		$this->protocol = (isset($this->protocol) ? $this->protocol : $this->get_protocol());
+		$this->set_hostname(self::getDokuPaymentHost());
+		$this->hostname = (isset($this->hostname) ? $this->hostname : $this->get_hostname());
+		$this->set_url('notify', "{$this->protocol}{$this->hostname}modules/gateways/callback/dokuhosted.php?page=notify");
+		$this->set_url('redirect', "{$this->protocol}{$this->hostname}modules/gateways/callback/dokuhosted.php?page=redirect");
+		$this->set_url('review', "{$this->protocol}{$this->hostname}modules/gateways/callback/dokuhosted.php?page=review");
+		$this->set_url('identify', "{$this->protocol}{$this->hostname}modules/gateways/callback/dokuhosted.php?page=identify");
+		// Set GLOBAL $DOKUCONFIGS
+		self::$DOKUCONFIGS = $configs;
+	}
+	public static function getDokuPaymentConfigs($Vars) {
+		$configs = array();
+		if (!isset(self::$DOKUCONFIGS)) {
+			return false;
 		}
-		exit;
-	break;
-	case 'identify':
-		if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-			if (count($doku_ipn_params['body']) > 0) {
-				# DOKU Identify
-				$dokuparams = array(
-					'TRANSIDMERCHANT'			=> (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : ''),
-					'PURCHASECURRENCY'			=> (isset($doku_ipn_params['body']['PURCHASECURRENCY']) ? $doku_ipn_params['body']['PURCHASECURRENCY'] : ''),
-					'CURRENCY'					=> (isset($doku_ipn_params['body']['CURRENCY']) ? $doku_ipn_params['body']['CURRENCY'] : ''),
-					'PAYMENTCHANNEL'			=> (isset($doku_ipn_params['body']['PAYMENTCHANNEL']) ? $doku_ipn_params['body']['PAYMENTCHANNEL'] : ''),
-					'PAYMENTCODE'				=> (isset($doku_ipn_params['body']['PAYMENTCODE']) ? $doku_ipn_params['body']['PAYMENTCODE'] : ''),
-					'AMOUNT'					=> (isset($doku_ipn_params['body']['AMOUNT']) ? $doku_ipn_params['body']['AMOUNT'] : ''),
-					'SESSIONID'					=> (isset($doku_ipn_params['body']['SESSIONID']) ? $doku_ipn_params['body']['SESSIONID'] : ''),
-				);
-				if ($Identify_Enabled) {
-					if ($Log_Enabled) {
-						logTransaction($gatewayParams['paymentmethod'], $dokuparams, "Payment Identify");
-					}
-				}
-				$REQUEST_METHOD_MSG = "IDENTIFY:Continue";
-			} else {
-				$REQUEST_METHOD_MSG =  "STOP : BODY Have no content - Identify";
+		switch (strtolower($Vars)) {
+			case 'channels':
+				$configs = (isset(self::$DOKUCONFIGS['paymentchannels']) ? self::$DOKUCONFIGS['paymentchannels'] : NULL);
+				break;
+			case 'acquirers':
+				$configs = (isset(self::$DOKUCONFIGS['paymentacquirers']) ? self::$DOKUCONFIGS['paymentacquirers'] : NULL);
+				break;
+			case 'tenors':
+				$configs = (isset(self::$DOKUCONFIGS['paymenttenors']) ? self::$DOKUCONFIGS['paymenttenors'] : NULL);
+				break;
+		}
+		return $configs;
+	}
+	public static function getDokuPaymentProtocol() {
+		if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+			if ( $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https' ) {
+				$_SERVER['HTTPS']       = 'on';
+				$_SERVER['SERVER_PORT'] = 443;
 			}
+		}
+		$protocol = 'http://';
+		if (isset($_SERVER['HTTPS'])) {
+			$protocol = (($_SERVER['HTTPS'] == 'on') ? 'https://' : 'http');
 		} else {
-			$REQUEST_METHOD_MSG = "STOP : POST Method Required - Identify";
+			$protocol = (isset($_SERVER["SERVER_PROTOCOL"]) ? $_SERVER["SERVER_PROTOCOL"] : 'http');
+			$protocol = ((strtolower(substr($protocol, 0, 5)) =='https') ? 'https://': 'http://');
 		}
-	break;
-	case 'review':
-		$dokuparams = array();
-		$REQUEST_METHOD_MSG = "Review Page - Redirect to main-page";
-		// Get from Querystring
-		$dokuparams['TRANSIDMERCHANT'] = (isset($doku_redirect_params['TRANSIDMERCHANT']) ? $doku_redirect_params['TRANSIDMERCHANT'] : '');
-		// Get from Postbody
-		if (count($doku_ipn_params['body']) > 0) {
-			$dokuparams['TRANSIDMERCHANT'] = (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : $dokuparams['TRANSIDMERCHANT']);
+		return $protocol;
+	}
+	public static function getDokuPaymentHost() {
+		$currentPath = (isset($_SERVER['SCRIPT_NAME']) ? $_SERVER['SCRIPT_NAME'] : '');
+		$pathInfo = pathinfo(dirname($currentPath)); 
+		$hostName = (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '');
+		$return = $hostName;
+		$return .= ((substr($hostName, -1) == '/') ? '' : '/');
+		return $return;
+	}
+	public static function _GET(){
+		$__GET = array();
+		$request_uri = ((isset($_SERVER['REQUEST_URI']) && (!empty($_SERVER['REQUEST_URI']))) ? $_SERVER['REQUEST_URI'] : '/');
+		$_get_str = explode('?', $request_uri);
+		if( !isset($_get_str[1]) ) return $__GET;
+		$params = explode('&', $_get_str[1]);
+		foreach ($params as $p) {
+			$parts = explode('=', $p);
+			$__GET[$parts[0]] = isset($parts[1]) ? $parts[1] : '';
 		}
-		$transaction_id_part = substr($dokuparams['TRANSIDMERCHANT'], 0, 14);
-		/*
-		if (!$doku_error) {
-			try {
-				$transaction_id_part = date_create_from_format('YmdHis', $transaction_id_part);
-			} catch (Exception $ex) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Exception error of date-created from form: {$ex->getMessage()}.";
-			}
+		return $__GET;
+	}
+	public function set_hostname($hostname) {
+		$this->hostname = $hostname;
+		return $this;
+	}
+	public function get_hostname() {
+		return $this->hostname;
+	}
+	public function set_protocol($protocol) {
+		$this->protocol = $protocol;
+		return $this;
+	}
+	public function get_protocol() {
+		return $this->protocol;
+	}
+	public static function set_url($type, $url) {
+		switch (strtolower($type)) {
+			case 'notify':
+			default:
+				self::$notify = $url;
+			break;
+			case 'redirect':
+				self::$redirect = $url;
+			break;
+			case 'review':
+				self::$review = $url;
+			break;
+			case 'identify':
+				self::$identify = $url;
+			break;
 		}
-		if (!$doku_error) {
-			if (!strtotime(date_format($transaction_id_part, 'Y-m-d H:i:s'))) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Transaction id part not in Dateformat structured.";
-			}
-		}
-		if (!$doku_error) {
-			$transaction_id_part = date_format($transaction_id_part, 'YmdHis');
-			$merchant_transaction = explode("{$transaction_id_part}", $dokuparams['TRANSIDMERCHANT']);
-			if (!isset($merchant_transaction[1])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : There is no Transaction-id from IPN Callback as expected: #DATETIME#TRANSID.";
-			}
-		}
-		*/
-		if (!$doku_error) {
-			$merchant_transaction = array(
-				0 => FALSE,
-				1 => $dokuparams['TRANSIDMERCHANT'],
-			);
-			$invoiceId = trim($merchant_transaction[1]);
-			/**
-			 * Validate Callback Invoice ID.
-			 *
-			 * Checks invoice ID is a valid invoice number. Note it will count an
-			 * invoice in any status as valid.
-			 *
-			 * Performs a die upon encountering an invalid Invoice ID.
-			 *
-			 * Returns a normalised invoice ID.
-			 *
-			 * @param int $invoiceId Invoice ID
-			 * @param string $gatewayName Gateway Name
-			**/
-			$invoiceId = checkCbInvoiceID($invoiceId, $gatewayParams['paymentmethod']);
-			if (!$invoiceId) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Invoice Id is not found.";
-				if ($Log_Enabled) {
-					logTransaction($gatewayParams['paymentmethod'], $doku_error_msg, "InvoiceId Not Found");
-				}
-			}
-		}
-		if (!$doku_error) {
-			$localApi['command'] = 'GetInvoice';
-			if (isset($localApi['data']['id'])) {
-				unset($localApi['data']['id']);
-			}
-			$localApi['data']['invoiceid'] = $invoiceId;
-			$InvoiceData = localAPI($localApi['command'], $localApi['data'], $localApi['username']);
-			$Redirect_Url = "";
-			if (isset($InvoiceData['invoiceid'])) {
-				if (intval($InvoiceData['invoiceid']) > 0) {
-					$GetConfigurationValue = localAPI('GetConfigurationValue', array('setting' => 'SystemURL'), $localApi['username']);
-					$Redirect_Url .= (isset($GetConfigurationValue['value']) ? $GetConfigurationValue['value'] : '');
-					$Redirect_Url .= ((substr($systemUrl, -1) == '/') ? '' : '/');
-					$Redirect_Url .= "viewinvoice.php?id={$invoiceId}";
-					header("HTTP/1.1 301 Moved Permanently");
-					header("Location: {$Redirect_Url}");
-					exit;
-				}
-			} else {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Local API Result not get invoiceid while review of InvoiceData from GetInvoice().";
-			}
-		}
-	break;
-	case 'notify':
-	default:
-		if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-			if (count($doku_ipn_params['body']) > 0) {
-				# DOKU Notify
-				$dokuparams = array(
-					'PAYMENTDATETIME'			=> (isset($doku_ipn_params['body']['PAYMENTDATETIME']) ? $doku_ipn_params['body']['PAYMENTDATETIME'] : ''),
-					'PURCHASECURRENCY' 			=> (isset($doku_ipn_params['body']['PURCHASECURRENCY']) ? $doku_ipn_params['body']['PURCHASECURRENCY'] : ''),
-					'LIABILITY'					=> (isset($doku_ipn_params['body']['LIABILITY']) ? $doku_ipn_params['body']['LIABILITY'] : ''),
-					'PAYMENTCHANNEL'			=> (isset($doku_ipn_params['body']['PAYMENTCHANNEL']) ? $doku_ipn_params['body']['PAYMENTCHANNEL'] : ''),
-					'AMOUNT'					=> (isset($doku_ipn_params['body']['AMOUNT']) ? $doku_ipn_params['body']['AMOUNT'] : ''),
-					'PAYMENTCODE'				=> (isset($doku_ipn_params['body']['PAYMENTCODE']) ? $doku_ipn_params['body']['PAYMENTCODE'] : ''),
-					'MCN'						=> (isset($doku_ipn_params['body']['MCN']) ? $doku_ipn_params['body']['MCN'] : ''),
-					'WORDS'						=> (isset($doku_ipn_params['body']['WORDS']) ? $doku_ipn_params['body']['WORDS'] : ''),
-					'RESULTMSG'					=> (isset($doku_ipn_params['body']['RESULTMSG']) ? $doku_ipn_params['body']['RESULTMSG'] : ''),
-					'VERIFYID'					=> (isset($doku_ipn_params['body']['VERIFYID']) ? $doku_ipn_params['body']['VERIFYID'] : ''),
-					'TRANSIDMERCHANT'			=> (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : ''),
-					'BANK'						=> (isset($doku_ipn_params['body']['BANK']) ? $doku_ipn_params['body']['BANK'] : ''),
-					'STATUSTYPE'				=> (isset($doku_ipn_params['body']['STATUSTYPE']) ? $doku_ipn_params['body']['STATUSTYPE'] : ''),
-					'APPROVALCODE'				=> (isset($doku_ipn_params['body']['APPROVALCODE']) ? $doku_ipn_params['body']['APPROVALCODE'] : ''),
-					'EDUSTATUS'					=> (isset($doku_ipn_params['body']['EDUSTATUS']) ? $doku_ipn_params['body']['EDUSTATUS'] : ''),
-					'THREEDSECURESTATUS'		=> (isset($doku_ipn_params['body']['THREEDSECURESTATUS']) ? $doku_ipn_params['body']['THREEDSECURESTATUS'] : ''),
-					'VERIFYSCORE'				=> (isset($doku_ipn_params['body']['VERIFYSCORE']) ? $doku_ipn_params['body']['VERIFYSCORE'] : ''),
-					'CURRENCY'					=> (isset($doku_ipn_params['body']['CURRENCY']) ? $doku_ipn_params['body']['CURRENCY'] : ''),
-					'RESPONSECODE'				=> (isset($doku_ipn_params['body']['RESPONSECODE']) ? $doku_ipn_params['body']['RESPONSECODE'] : ''),
-					'CHNAME'					=> (isset($doku_ipn_params['body']['CHNAME']) ? $doku_ipn_params['body']['CHNAME'] : ''),
-					'BRAND'						=> (isset($doku_ipn_params['body']['BRAND']) ? $doku_ipn_params['body']['BRAND'] : ''),
-					'VERIFYSTATUS'				=> (isset($doku_ipn_params['body']['VERIFYSTATUS']) ? $doku_ipn_params['body']['VERIFYSTATUS'] : ''),
-					'SESSIONID'					=> (isset($doku_ipn_params['body']['SESSIONID']) ? $doku_ipn_params['body']['SESSIONID'] : ''),
-				);
-				$REQUEST_METHOD_MSG = "NOTIFY:Continue";
-			} else {
-				$REQUEST_METHOD_MSG = "STOP : BODY Have no content";
-			}
-		} else {
-			$REQUEST_METHOD_MSG = "STOP : POST Method Required";
-		}
-	break;
-	case 'redirect':
-		# DOKU Params (GET)
-		$dokuparams = array(
-			'PAYMENTDATETIME'			=> (isset($doku_redirect_params['PAYMENTDATETIME']) ? $doku_redirect_params['PAYMENTDATETIME'] : ''),
-			'PURCHASECURRENCY' 			=> (isset($doku_redirect_params['PURCHASECURRENCY']) ? $doku_redirect_params['PURCHASECURRENCY'] : ''),
-			'LIABILITY'					=> (isset($doku_redirect_params['LIABILITY']) ? $doku_redirect_params['LIABILITY'] : ''),
-			'PAYMENTCHANNEL'			=> (isset($doku_redirect_params['PAYMENTCHANNEL']) ? $doku_redirect_params['PAYMENTCHANNEL'] : ''),
-			'AMOUNT'					=> (isset($doku_redirect_params['AMOUNT']) ? $doku_redirect_params['AMOUNT'] : ''),
-			'PAYMENTCODE'				=> (isset($doku_redirect_params['PAYMENTCODE']) ? $doku_redirect_params['PAYMENTCODE'] : ''),
-			'MCN'						=> (isset($doku_redirect_params['MCN']) ? $doku_redirect_params['MCN'] : ''),
-			'WORDS'						=> (isset($doku_redirect_params['WORDS']) ? $doku_redirect_params['WORDS'] : ''),
-			'RESULTMSG'					=> (isset($doku_redirect_params['RESULTMSG']) ? $doku_redirect_params['RESULTMSG'] : ''),
-			'VERIFYID'					=> (isset($doku_redirect_params['VERIFYID']) ? $doku_redirect_params['VERIFYID'] : ''),
-			'TRANSIDMERCHANT'			=> (isset($doku_redirect_params['TRANSIDMERCHANT']) ? $doku_redirect_params['TRANSIDMERCHANT'] : ''),
-			'BANK'						=> (isset($doku_redirect_params['BANK']) ? $doku_redirect_params['BANK'] : ''),
-			'STATUSTYPE'				=> (isset($doku_redirect_params['STATUSTYPE']) ? $doku_redirect_params['STATUSTYPE'] : ''),
-			'APPROVALCODE'				=> (isset($doku_redirect_params['APPROVALCODE']) ? $doku_redirect_params['APPROVALCODE'] : ''),
-			'EDUSTATUS'					=> (isset($doku_redirect_params['EDUSTATUS']) ? $doku_redirect_params['EDUSTATUS'] : ''),
-			'THREEDSECURESTATUS'		=> (isset($doku_redirect_params['THREEDSECURESTATUS']) ? $doku_redirect_params['THREEDSECURESTATUS'] : ''),
-			'VERIFYSCORE'				=> (isset($doku_redirect_params['VERIFYSCORE']) ? $doku_redirect_params['VERIFYSCORE'] : ''),
-			'CURRENCY'					=> (isset($doku_redirect_params['CURRENCY']) ? $doku_redirect_params['CURRENCY'] : ''),
-			'RESPONSECODE'				=> (isset($doku_redirect_params['RESPONSECODE']) ? $doku_redirect_params['RESPONSECODE'] : ''),
-			'CHNAME'					=> (isset($doku_redirect_params['CHNAME']) ? $doku_redirect_params['CHNAME'] : ''),
-			'BRAND'						=> (isset($doku_redirect_params['BRAND']) ? $doku_redirect_params['BRAND'] : ''),
-			'VERIFYSTATUS'				=> (isset($doku_redirect_params['VERIFYSTATUS']) ? $doku_redirect_params['VERIFYSTATUS'] : ''),
-			'SESSIONID'					=> (isset($doku_redirect_params['SESSIONID']) ? $doku_redirect_params['SESSIONID'] : ''),
-			'STATUSCODE'				=> (isset($doku_redirect_params['STATUSCODE']) ? $doku_redirect_params['STATUSCODE'] : ''),
-		);
-		# DOKU Params (POST)
-		if (count($doku_ipn_params['body']) > 0) {
-			foreach ($doku_ipn_params['body'] as $key => $val) {
-				if (!isset($dokuparams[$key])) {
-					$dokuparams[$key] = $val;
-				} else {
-					if ($dokuparams[$key] != $val) {
-						$dokuparams[$key] = $val;
-					}
-				}
-			}
-		}
-		if (count($doku_redirect_params) > 0) {
-			$REQUEST_METHOD_MSG = "REDIRECT:Continue";
-		} else {
-			$REQUEST_METHOD_MSG = "STOP : QUERYSTRING Have no content";
-		}
-	break;
+	}
 }
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'notify':
-	default:
-		if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $dokuparams, 'Payment Notify From Doku'); }
-	break;
-	case 'redirect':
-		if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $dokuparams, 'Payment Redirect From Doku'); }
-	break;
-	case 'review':
-	case 'identify':
-		// Nothing to do
-	break;
+// Include @DOKUCONFIGS
+$configfile = (dirname(__FILE__). '/dokuhosted/dokuhosted-config.php');
+if (!file_exists($configfile)) {
+	Exit("Required configs file does not exists.");
 }
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		echo "{$REQUEST_METHOD_MSG}";
-	break;
-	case 'notify':
-	case 'redirect':
-	default:
-		//--------------------------------------------------------------------
-		if (!$doku_error) {
-			if (is_array($dokuparams['TRANSIDMERCHANT']) || is_object($dokuparams['TRANSIDMERCHANT'])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Array or Object return for TRANSIDMERCHANT.";
-			}
-		}
-		/*
-		if (!$doku_error) {
-			$transaction_id = $dokuparams['TRANSIDMERCHANT'];
-			$transaction_id_part = substr($dokuparams['TRANSIDMERCHANT'], 0, 14);
-			try {
-				$transaction_id_part = date_create_from_format('YmdHis', $transaction_id_part);
-			} catch (Exception $ex) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Exception error of date-created from form: {$ex->getMessage()}.";
-			}
-		}
-		if (!$doku_error) {
-			if (!strtotime(date_format($transaction_id_part, 'Y-m-d H:i:s'))) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Transaction id part not in Dateformat structured.";
-			}
-		}
-		if (!$doku_error) {
-			$transaction_id_part = date_format($transaction_id_part, 'YmdHis');
-			$merchant_transaction = explode("{$transaction_id_part}", $dokuparams['TRANSIDMERCHANT']);
-			if (!isset($merchant_transaction[1])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : There is no Transaction-id from IPN Callback as expected: #DATETIME#TRANSID.";
-			}
-		}
-		*/
-		#########################################
-		if (!$doku_error) {
-			$merchant_transaction = array(
-				0 => FALSE,
-				1 => $dokuparams['TRANSIDMERCHANT'],
-			);
-			$invoiceId = trim($merchant_transaction[1]);
-			/**
-			 * Validate Callback Invoice ID.
-			 *
-			 * Checks invoice ID is a valid invoice number. Note it will count an
-			 * invoice in any status as valid.
-			 *
-			 * Performs a die upon encountering an invalid Invoice ID.
-			 *
-			 * Returns a normalised invoice ID.
-			 *
-			 * @param int $invoiceId Invoice ID
-			 * @param string $gatewayName Gateway Name
-			**/
-			$invoiceId = checkCbInvoiceID($invoiceId, $gatewayParams['paymentmethod']);
-			if (!$invoiceId) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Invoice Id is not found.";
-				if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $doku_error_msg, "InvoiceId Not Found"); }
-			}
-		}
-		########################################
-		//--------------------------------------------------------------------
-		if (!$doku_error) {
-			$params_input = array();
-			$params_input['amount'] = (isset($dokuparams['AMOUNT']) ? $dokuparams['AMOUNT'] : '0.00');
-			$params_input['transaction_id'] = (isset($dokuparams['TRANSIDMERCHANT']) ? $dokuparams['TRANSIDMERCHANT'] : 0);
-			$params_input['transaction_session'] = (isset($dokuparams['SESSIONID']) ? $dokuparams['SESSIONID'] : '');
-			$params_input['transaction_currency'] = (isset($dokuparams['CURRENCY']) ? $dokuparams['CURRENCY'] : '360');
-			$params_input['result_msg'] = (isset($dokuparams['RESULTMSG']) ? $dokuparams['RESULTMSG'] : ''); // SUCCESS | FAILED
-			$params_input['verify_status'] = (isset($dokuparams['VERIFYSTATUS']) ? $dokuparams['VERIFYSTATUS'] : ''); // NA
-			$params_input['words'] = (isset($dokuparams['WORDS']) ? $dokuparams['WORDS'] : '');
-			// Make notify structured
-			$CheckNotifyPaymentStructure = $DokuPayment->create_payment_structure('notify', 0, $params_input, $dokuparams);
-			if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $CheckNotifyPaymentStructure, 'Payment Notify Structured: ' . (__LINE__)); }
-			if (!isset($CheckNotifyPaymentStructure['WORDS'])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Not get WORDS string from created notify structured.";
-			}
-		}
-		if (!$doku_error) {
-			if (!is_string($params_input['words'])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Words should be a string.";
-			}
-		}
-		//---------------------------------------------------------------------------------
-		break;
+require($configfile);
+if (!isset($DOKUCONFIGS)) {
+	Exit("There is no DOKUCONFIGS of included config file.");
 }
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-	case 'notify':
-	case 'redirect':
-	default:	
-		// Make more @XMLPaymentStatus params
-		if (count($dokuparams) > 0) {
-			foreach ($dokuparams as $key => $val) {
-				$key = preg_replace("/[^a-zA-Z0-9]+/", "", $key);
-				if (!empty($key) || ($key != '')) {
-					$XMLPaymentStatus[$key] = $val;
-				}
-			}
-		}
-		//------------------------------------
-		$Redirect_Url = "/";
-		if (!$doku_error) {
-			If (isset($localApi['data']['id'])) {
-				unset($localApi['data']['id']);
-			}
-			$localApi['data']['invoiceid'] = $invoiceId;
-			//unset($localApi['data']['invoiceid']);
-			//$localApi['data']['id'] = $invoiceId;
-			//$InvoiceData = localAPI($localApi['command'], $localApi['data'], $localApi['username']);
-			// query localApi from invoiceid
-			$InvoiceData = localAPI('GetInvoice', $localApi['data'], $localApi['username']);
-			if (isset($InvoiceData['invoiceid']) && isset($InvoiceData['userid'])) {
-				if (intval($InvoiceData['invoiceid']) > 0) {
-					$GetConfigurationValue = localAPI('GetConfigurationValue', array('setting' => 'SystemURL'), $localApi['username']);
-					$Redirect_Url = (isset($GetConfigurationValue['value']) ? $GetConfigurationValue['value'] : '');
-					$Redirect_Url .= ((substr($systemUrl, -1) == '/') ? '' : '/');
-					$Redirect_Url .= "viewinvoice.php?id={$invoiceId}";
-				}
-			} else {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Local API Result not get invoiceid of InvoiceData from GetInvoice().";
-			}
-		}
-		//=========================
-		// Send details to customer
-		//=========================
-		if (!$doku_error) {
-			//----- Additional for Virtual Account Payment
-			$params_input['transaction_va_channels'] = $DokuPayment->get_virtual_channels();
-			$params_input['transaction_va_channel'] = (isset($doku_ipn_params['body']['PAYMENTCHANNEL']) ? $doku_ipn_params['body']['PAYMENTCHANNEL'] : '');
-			$params_input['transaction_va_channel_code'] = (is_string($params_input['transaction_va_channel']) ? sprintf('%02s', $params_input['transaction_va_channel']) : '00');
-			$params_input['transaction_va_channel_name'] = $DokuPayment->get_paymentchannel_name($params_input['transaction_va_channel_code']);
-			$params_input['transaction_va_code'] = (isset($doku_ipn_params['body']['PAYMENTCODE']) ? $doku_ipn_params['body']['PAYMENTCODE'] : '');
-			$params_input['transaction_va_reference'] = (isset($doku_ipn_params['body']['TRANSIDMERCHANT']) ? $doku_ipn_params['body']['TRANSIDMERCHANT'] : '');
-			$params_input['transaction_va_amount'] = (isset($doku_ipn_params['body']['AMOUNT']) ? $doku_ipn_params['body']['AMOUNT'] : '');
-			$params_input['transaction_va_amount'] = number_format($params_input['transaction_va_amount'], 2);
-			$params_input['transaction_va_amount'] = "Rp. {$params_input['transaction_va_amount']}";
-			$params_input['transaction_va_duedate'] = isset($InvoiceData['duedate']) ? $InvoiceData['duedate'] : '';
-			$params_input['transaction_va_duedate'] .= " " . date('H:i:s', (strtotime($Datezone->format('Y-m-d H:i:s')) + 21600));
-			$params_input['transaction_va_link'] = $Redirect_Url;
-			// Trigger
-			if (in_array($params_input['transaction_va_channel_code'], $params_input['transaction_va_channels'])) {
-				switch (strtolower($params_input['transaction_va_channel_code'])) {
-					case '31':
-					case '35':
-						$params_input['transaction_va_name'] = 'Nomor Kode Bayar';
-					break;
-					default:
-						$params_input['transaction_va_name'] = 'Nomor Virtual Account';
-					break;
-				}
-				try {
-					//$data['messagename'] = 'DOKU_Payment';
-					$data['id'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-					$data['customtype'] = 'general';
-					$data['customsubject'] = "Payment With Doku Merchant - {$params_input['transaction_va_channel_name']}";
-					$data['custommessage'] = '<table class="table table-info" style="border: 1px solid #cccccc; width: 100%;" border="0" cellspacing="2" cellpadding="4"><thead><tr><th colspan="2">Detail Virtual Account untuk Pembayaran Pesanan Anda</th></tr></thead><tbody><tr><th style="font-weight: bold; border-bottom: 1px solid #ccc;">{$transaction_va_channel_name}</th></tr></tbody><tbody><tr><td>Nomor Referensi</td><td>{$transaction_va_reference}</td></tr><tr><td>ID Transaksi</td><td>{$transaction_va_reference}</td></tr><tr><td>' . $params_input['transaction_va_name'] . '</td><td>{$transaction_va_code}</td></tr><tr><td>Jumlah</td><td>{$transaction_va_amount}</td></tr><tr><td>Tanggal Expired</td><td>{$transaction_va_duedate}</td></tr></tbody><tfoot><tr><td colspan="2"><div class="links"><a href="{$transaction_va_link}">{$transaction_va_link}</a></div></td></tr></tfoot></table>';
-					$data['customvars'] = base64_encode(serialize($params_input));
-					$sendEmail = localAPI('SendEmail', $data, $localApi['username']);
-				} catch (Exception $ex) {
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Send email details is going error with exception: {$ex->getMessage()}";
-				}
-			}
-		}
-		if (!$error) {
-			/*
-			$data['clientid'] = (isset($InvoiceData['userid']) ? $InvoiceData['userid'] : '');
-			$data['stats'] = true;
-			$userData = localAPI('GetClientsDetails', $data, $localApi['username']);
-			if (!isset($userData['email'])) {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Cannot get userData Details from GetClientsDetails().";
-			}
-			*/
-		}
+$DokuAdmin = new dokuhosted_DokuAdmin($DOKUCONFIGS);
+/**
+ * Define gateway configuration options.
+ *
+ * The fields you define here determine the configuration options that are
+ * presented to administrator users when activating and configuring your
+ * payment gateway module for use.
+ *
+ * Supported field types include:
+ * * text
+ * * password
+ * * yesno
+ * * dropdown
+ * * radio
+ * * textarea
+ *
+ * Examples of each field type and their possible configuration parameters are
+ * provided in the sample function below.
+ *
+ * @return array
+ */
+// Require doku-payment class instance
+require('dokuhosted/dokuhosted-whmcs.php');
+function dokuhosted_config() {
+    $configs = array(
+        // the friendly display name for a payment gateway should be
+        // defined here for backwards compatibility
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'DOKU Merchant',
+			'Description' => 'DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on http://www.doku.com',
+        ),
+		'Pembatas-Description-Payment-Gateway' => array(
+			'FriendlyName' => '',
+			'Type' => 'hidden',
+			'Size' => '72',
+            'Default' => '',
+			'Description' => '<img src="https://doku.com/themes/default/images/logo-doku-merchant.png" align="left" style="padding-right:12px;" /> DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on <span style="color:red;"><a href="http://www.doku.com">http://www.doku.com</a></span>',
+		),
+		'Description-Payment-Gateway' => array(
+			'FriendlyName' => 'Description',
+			'Type' => 'textarea',
+			'Rows' => '8',
+            'Cols' => '72',
+			'Default' => 'DOKU is an online payment platform that processes payments through many different methods, including Credit Card, ATM Transfer and DOKU Wallet. Check us out on http://www.doku.com',
+			'Description' => '',
+		),
+        // a text field type allows for single line text input
+		# Development
+		//-------------
+		'Pembatas-Sandbox' => array(
+			"FriendlyName" => "(*)", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => '',
+			"Description" => '<span style="color:green;font-weight:bold;">Development Params</span>',
+		),
+		//-------------
+        'MallId' => array(
+            'FriendlyName' => 'Development: Mall ID',
+            'Type' => 'text',
+            'Size' => '25',
+            'Default' => '',
+            'Description' => 'Enter your Mall ID here',
+        ),
+		'ChainMerchant' => array(
+            'FriendlyName' => 'Development: Chain Merchant (Default is: NA)',
+            'Type' => 'text',
+            'Size' => '25',
+            'Default' => 'NA',
+            'Description' => 'Enter Chain Merchant (Default is: NA)',
+        ),
+		'SharedKey' => array(
+			'FriendlyName' => 'Development: Shared Key',
+			'Type' => 'text',
+			'Size' => '25',
+			'Default' => '',
+			'Description' => 'Enter Shared Key you got from DOKU Dashboard',
+		),
+		//-------------
+		'Pembatas-Live' => array(
+			"FriendlyName" => "(*)", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => '',
+			"Description" => '<span style="color:red;font-weight:bold;">Production Params</span>',
+		),
+		//-------------
+		# Live
+		'MallId_Live' => array(
+            'FriendlyName' => '<span style="color:red;font-weight:bold;">(*)</span>Production: Mall ID',
+            'Type' => 'text',
+            'Size' => '25',
+            'Default' => '',
+            'Description' => 'Enter your Mall ID here',
+        ),
+		'ChainMerchant_Live' => array(
+            'FriendlyName' => '<span style="color:red;font-weight:bold;">(*)</span>Production: Chain Merchant Name (Default is: NA)',
+            'Type' => 'text',
+            'Size' => '25',
+            'Default' => 'NA',
+            'Description' => 'Enter Chain Merchant Name (Default is: NA)',
+        ),
+		'SharedKey_Live' => array(
+			'FriendlyName' => '<span style="color:red;font-weight:bold;">(*)</span>Production: Shared Key',
+			'Type' => 'text',
+			'Size' => '25',
+			'Default' => '',
+			'Description' => 'Enter Shared Key you got from DOKU Dashboard',
+		),
+		//-------------
+		'Pembatas-Global-Params' => array(
+			"FriendlyName" => "", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => '',
+			"Description" => '<span style="color:blue;font-weight:bold;">Global Params</span>',
+		),
+		//-------------
+		# GLOBAL
+		// the dropdown field type renders a select menu of options (LOGGER)
+        'Log-Enabled' => array(
+            'FriendlyName' => "Use Logger on Transaction Log? (Billing &gt; Gateway Log)", 
+			'Type' => "yesno",
+			'Description' => "Tick this box to enable Logging", 
+        ),
+        // the dropdown field type renders a select menu of options
+        'Environment' => array(
+            'FriendlyName' => 'Environment Mode',
+            'Type' => 'dropdown',
+            'Options' => array(
+                'sandbox' => 'Development',
+                'live' => 'Production',
+            ),
+            'Description' => 'Choose environment development or production',
+        ),
+		"EDU-Enabled" => array(
+			'FriendlyName' => "Use EDU?", 
+			'Type' => "yesno",
+			'Description' => "Tick this box to enable EDU", 
+		),
+		"Identify-Enabled" => array(
+			'FriendlyName' => "Use Identify?", 
+			'Type' => "yesno",
+			'Description' => "Tick this box to enable DOKU Identify", 
+		),
 		
-		$orders_debug = array(
-			'order_id'				=> 0,
-			'order_num'				=> 0,
-			'order_status'			=> '',
-		);
-		$order_id = 0;
-		$order_num = 0;
-		$order_status = '';
-		if (!$doku_error) {
-			if (isset($InvoiceData['invoiceid']) && isset($InvoiceData['invoicenum']) && isset($InvoiceData['status'])) {
-				if (intval($InvoiceData['invoiceid']) > 0) {
-					$order_id = $InvoiceData['invoiceid'];
-					$orders_debug['order_id'] = $order_id;
-				}
-				if (intval($InvoiceData['invoicenum']) > 0) {
-					$order_num = $InvoiceData['invoicenum'];
-					$orders_debug['order_num'] = $order_num;
-				}
-				$order_status = (is_string($InvoiceData['status']) ? strtolower($InvoiceData['status']) : '');
-				$orders_debug['order_status'] = $order_status;
-			} else {
-				$doku_error = true;
-				$doku_error_msg[] = "STOP : Local API Result for GetInvoice() not get proper data as expected.";
+		"PaymentCheck-Enabled" => array(
+			'FriendlyName' => "<span style='font-weight:bold;'>Enable Payment Check During Notify and Redirect</span>", 
+			'Type' => "yesno",
+			'Description' => "Tick this box to enable Payment Check (<span style='text-decoration:italic;color:green;'>We recomended you enabled payment-check to verified payment</span>)", 
+		),
+		'URL-Notify' => array(
+			"FriendlyName" => "Enter your URL Notify to DOKU Dasboard", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => dokuhosted_DokuAdmin::$notify,
+			"Description" => dokuhosted_DokuAdmin::$notify,
+		),
+		'URL-Redirect' => array(
+			"FriendlyName" => "Enter your URL Redirect to DOKU Dasboard", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => dokuhosted_DokuAdmin::$redirect,
+			"Description" => dokuhosted_DokuAdmin::$redirect,
+		),
+		'URL-Review' => array(
+			"FriendlyName" => "Enter your URL Review to DOKU Dasboard", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => dokuhosted_DokuAdmin::$review,
+			"Description" => dokuhosted_DokuAdmin::$review,
+		),
+		'URL-Identify' => array(
+			"FriendlyName" => "Enter your URL Identify to DOKU Dasboard", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => dokuhosted_DokuAdmin::$identify,
+			"Description" => dokuhosted_DokuAdmin::$identify,
+		),
+		//
+		'Local-Api-Admin-Username' => array(
+			'FriendlyName'	=> '(*) WHMCS Admin Username for using WHMCS::localAPI().',
+			'Type'			=> 'text',
+			'Size'			=> '22',
+			'Default'		=> '',
+			'Description'	=> 'Enter your WHMCS Admin Username for using WHMCS::localAPI().',
+		),
+		//----------------------------------------------------------------------------
+		'Pembatas-Payment-Channel' => array(
+			"FriendlyName" => "<span style='color:black;font-weight:bold;'>(*) Select Enabled Payment Channel</span>", 
+			"Type" => 'hidden',
+			"Size" => "64",
+			"Default" => '',
+			"Description" => '<div style="width:100%;border-bottom:2px solid #ff7200;padding-bottom:4px;"><span style="color:#ff7200;font-weight:bold;text-decoration:none;">Please tick to enable payment channels</span></div>',
+		),
+		//-----------------------------------------------------------------------------
+	
+    );
+	// Add payment-channels
+	$getDokuPaymentChannels = dokuhosted_DokuAdmin::getDokuPaymentConfigs('channels');
+	if (count($getDokuPaymentChannels) > 0) {
+		foreach ($getDokuPaymentChannels as $val) {
+			$payment_channel_key = "Payment-Channel-";
+			$payment_channel_key .= (isset($val[0]) ? $val[0] : '00');
+			$configs[$payment_channel_key] = array(
+				'FriendlyName'		=> '',
+				'Type'				=> 'yesno',
+				'Default'				=> (isset($val[0]) ? $val[0] : '00'),
+				'Description'		=> (isset($val[1]) ? $val[1] : 'All'),
+			);
+		}
+	}
+	//------------------------------------------------------------------------------------
+	// INSTALLMENT PAYMENT (Credit Card)
+	//------------------------------------------------------------------------------------
+	$configs["Installment-Enabled"] = array(
+		'FriendlyName'	=> 'Use Installment',
+		'Type'			=> 'dropdown',
+		'Options'		=> array(
+			'SALE'					=> 'SALE',
+			'ONUS'					=> 'ONUS INSTALLMENT',
+			'OFFUS'					=> 'OFFUS INSTALLEMENT',
+		),
+	);
+	//------------------------------------------------------
+	$configs['Pembatas-Payment-Acquirer-Bank'] = array(
+		"FriendlyName" => "<span style='color:black;font-weight:bold;'>::</span>", 
+		"Type" => 'hidden',
+		"Size" => "64",
+		"Default" => '',
+		"Description" => '<div style="width:100%;border-bottom:2px solid #ff7200;padding-bottom:4px;"><span style="color:#778899;font-weight:bold;text-decoration:none;">ACQUIRER BANK FOR INSTALLMENT</span></div>',
+	);
+	//--------------
+	// GLOBAL OBJECT FOR PROMO OF EACH BANK TENORS
+	$GLOBAL_ACQUIRER_BANKS = array(
+		'onus'		=> [],
+		'offus'		=> [],
+	);
+	# Get Banks
+	$getDokuPaymentAcquirers = dokuhosted_DokuAdmin::getDokuPaymentConfigs('acquirers');
+	//-----------------------
+	// ON US INSTALLMENT
+	//-----------------------
+	$configs['Pembatas-Payment-Acquirer-Bank-Onus'] = array(
+		"FriendlyName" => "<span style='color:black;font-weight:bold;'>(*) Payment Acquirer Banks (ON US)</span>", 
+		"Type" => 'hidden',
+		"Size" => "64",
+		"Default" => '',
+		"Description" => '<div style="width:100%;border-bottom:2px solid #ff7200;padding-bottom:4px;"><span style="color:#ff7200;font-weight:bold;text-decoration:none;">Please tick to enable payment acquirers bank</span></div>',
+	);
+	if (isset($getDokuPaymentAcquirers['onus'])) {
+		if (count($getDokuPaymentAcquirers['onus']) > 0) {
+			foreach ($getDokuPaymentAcquirers['onus'] as $keval) {
+				$bank_acquirer_code = (isset($keval[0]) ? $keval[0] : '100'); // 100 (BNI as Default Bank)
+				$bank_acquirer_name = (isset($keval[1]) ? $keval[1] : 'Bank BNI'); // 100 (BNI as Default Bank)
+				$GLOBAL_ACQUIRER_BANKS['onus'][] = array(
+					'code'			=> $bank_acquirer_code,
+					'name'			=> $bank_acquirer_name,
+					'tenor'			=> array(),
+				);
 			}
 		}
-		break;
+	}
+	if (count($GLOBAL_ACQUIRER_BANKS['onus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['onus'] as $k => $val) {
+			# Get Tenors
+			$getDokuPaymentTenors = dokuhosted_DokuAdmin::getDokuPaymentConfigs('tenors');
+			if (count($getDokuPaymentTenors) > 0) {
+				foreach ($getDokuPaymentTenors as $keval) {
+					$tenor_acquirer_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+					$tenor_acquirer_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+					$val_tenor = array(
+						'code'		=> $tenor_acquirer_code,
+						'name'		=> $tenor_acquirer_name,
+						'promo'		=> '',
+					);
+					$GLOBAL_ACQUIRER_BANKS['onus'][$k]['tenor'][] = $val_tenor;
+				}
+			}
+		}
+	}
+	# Build into @configs
+	if (count($GLOBAL_ACQUIRER_BANKS['onus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['onus'] as $key => $val) {
+			// Bank installment key
+			$bank_installment_key = "Bank-Installment-Acquirer-Onus-";
+			$bank_installment_key .= (isset($val['code']) ? $val['code'] : '100'); // 100 = BNI
+			# add to configs
+			$configs[$bank_installment_key] = array(
+				'FriendlyName'		=> '',
+				'Type'				=> 'yesno',
+				'Default'				=> (isset($val['code']) ? $val['code'] : '100'), // 100 = BNI
+				'Description'		=> "<span style='font-weight:bold;'>" . (isset($val['name']) ? $val['name'] : 'Bank BNI..?') . "</span>", // BNI as Default
+			);
+			$bank_installment_code = (isset($val['code']) ? (string)$val['code'] : '');
+			if (strtolower($bank_installment_code) === strtolower('100')) {
+				$configs["{$bank_installment_key}-00"] = array(
+					'FriendlyName'		=> 'Installment Promo Code For ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+					'Type'				=> 'text',
+					'Size'				=> '22',
+					'Default'			=> '',
+					'Description'		=> 'Insert Promo Code For ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+				);
+			}
+			// Bank promo for each available tenors
+			if (isset($val['tenor'])) {
+				if (count($val['tenor']) > 0) {
+					foreach ($val['tenor'] as $keval) {
+						$bank_installment_tenor = $bank_installment_key;
+						$bank_installment_tenor .= "-";
+						$bank_installment_tenor .= (isset($keval['code']) ? $keval['code'] : '03'); // 03 Months as default
+						# add to configs (tenor)
+						$configs[$bank_installment_tenor] = array(
+							'FriendlyName'		=> '',
+							'Type'				=> 'yesno',
+							'Default'			=> (isset($keval['code']) ? $keval['code'] : '03'),
+							'Description'		=> (isset($keval['name']) ? $keval['name'] : '03 Bulan'),
+						);
+						$bank_installment_tenor_promo = "{$bank_installment_tenor}-PromoId";
+						# add to configs (promo)
+						// except BNI
+						if (strtolower($bank_installment_code) !== strtolower('100')) {
+							$configs[$bank_installment_tenor_promo] = array(
+								'FriendlyName'		=> 'Installment Promo Code For ' . (isset($keval['name']) ? $keval['name'] : '03 Bulan'),
+								'Type'				=> 'text',
+								'Size'				=> '22',
+								'Default'			=> '',
+								'Description'		=> 'Insert Promo Code For ' . (isset($keval['name']) ? $keval['name'] : '03 Bulan') . ' On ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+							);
+						} else {
+							$configs[$bank_installment_tenor_promo] = array(
+								'FriendlyName'		=> '',
+								'Type'				=> 'hidden',
+								'Size'				=> '22',
+								'Default'			=> '001',
+								'Description'		=> '',
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+	//-----------------------
+	// OFF US INSTALLMENT
+	//-----------------------
+	$configs['Pembatas-Payment-Acquirer-Bank-Offus'] = array(
+		"FriendlyName" => "<span style='color:black;font-weight:bold;'>(*) Payment Acquirer Banks (OFF US)</span>", 
+		"Type" => 'hidden',
+		"Size" => "64",
+		"Value" => '',
+		"Description" => '<div style="width:100%;border-bottom:2px solid #ff7200;padding-bottom:4px;"><span style="color:#ff7200;font-weight:bold;text-decoration:none;">Please tick to enable payment acquirers bank</span></div>',
+	);
+	if (isset($getDokuPaymentAcquirers['offus'])) {
+		if (count($getDokuPaymentAcquirers['offus']) > 0) {
+			foreach ($getDokuPaymentAcquirers['offus'] as $keval) {
+				$bank_acquirer_code = (isset($keval[0]) ? $keval[0] : '100'); // 100 (BNI as Default Bank)
+				$bank_acquirer_name = (isset($keval[1]) ? $keval[1] : 'Bank BNI'); // 100 (BNI as Default Bank)
+				$GLOBAL_ACQUIRER_BANKS['offus'][] = array(
+					'code'			=> $bank_acquirer_code,
+					'name'			=> $bank_acquirer_name,
+					'tenor'			=> array(),
+				);
+			}
+		}
+	}
+	if (count($GLOBAL_ACQUIRER_BANKS['offus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['offus'] as $k => $val) {
+			# Get Tenors
+			$getDokuPaymentTenors = dokuhosted_DokuAdmin::getDokuPaymentConfigs('tenors');
+			if (count($getDokuPaymentTenors) > 0) {
+				foreach ($getDokuPaymentTenors as $keval) {
+					$tenor_acquirer_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+					$tenor_acquirer_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+					$val_tenor = array(
+						'code'		=> $tenor_acquirer_code,
+						'name'		=> $tenor_acquirer_name,
+						'promo'		=> '',
+					);
+					$GLOBAL_ACQUIRER_BANKS['offus'][$k]['tenor'][] = $val_tenor;
+				}
+			}
+		}
+	}
+	# Build into @configs
+	if (count($GLOBAL_ACQUIRER_BANKS['offus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['offus'] as $key => $val) {
+			// Bank installment key
+			$bank_installment_key = "Bank-Installment-Acquirer-Offus-";
+			$bank_installment_key .= (isset($val['code']) ? $val['code'] : '100'); // 100 = BNI
+			// For OFFUS because same $val['code'] create unique identify by index loop
+			$bank_installment_key .= "-{$key}";
+			# add to configs
+			$configs[$bank_installment_key] = array(
+				'FriendlyName'		=> '',
+				'Type'				=> 'yesno',
+				'Default'				=> (isset($val['code']) ? $val['code'] : '100'), // 100 = BNI
+				'Description'		=> "<span style='font-weight:bold;'>" . (isset($val['name']) ? $val['name'] : 'Bank BNI..?') . "</span>", // BNI as Default
+			);
+			$bank_installment_code = (isset($val['code']) ? (string)$val['code'] : '');
+			if (strtolower($bank_installment_code) === strtolower('000')) {
+				$configs["{$bank_installment_key}-00"] = array(
+					'FriendlyName'		=> 'Installment Promo Code For ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+					'Type'				=> 'text',
+					'Size'				=> '22',
+					'Default'			=> '',
+					'Description'		=> 'Insert Promo Code For ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+				);
+			}
+			// Bank promo for each available tenors
+			if (isset($val['tenor'])) {
+				if (count($val['tenor']) > 0) {
+					foreach ($val['tenor'] as $keval) {
+						$bank_installment_tenor = $bank_installment_key;
+						$bank_installment_tenor .= "-";
+						$bank_installment_tenor .= (isset($keval['code']) ? $keval['code'] : '03'); // 03 Months as default
+						# add to configs (tenor)
+						$configs[$bank_installment_tenor] = array(
+							'FriendlyName'		=> '',
+							'Type'				=> 'yesno',
+							'Default'			=> (isset($keval['code']) ? $keval['code'] : '03'),
+							'Description'		=> (isset($keval['name']) ? $keval['name'] : '03 Bulan'),
+						);
+						$bank_installment_tenor_promo = "{$bank_installment_tenor}-PromoId";
+						# add to configs (promo)
+						// except BNI
+						if (strtolower($bank_installment_code) !== strtolower('000')) {
+							$configs[$bank_installment_tenor_promo] = array(
+								'FriendlyName'		=> 'Installment Promo Code For ' . (isset($keval['name']) ? $keval['name'] : '03 Bulan'),
+								'Type'				=> 'text',
+								'Size'				=> '22',
+								'Default'			=> '',
+								'Description'		=> 'Insert Promo Code For ' . (isset($keval['name']) ? $keval['name'] : '03 Bulan') . ' On ' . (isset($val['name']) ? $val['name'] : 'Bank BNI..?'),
+							);
+						} else {
+							$configs[$bank_installment_tenor_promo] = array(
+								'FriendlyName'		=> '',
+								'Type'				=> 'hidden',
+								'Size'				=> '22',
+								'Default'			=> '001',
+								'Description'		=> '',
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+	return $configs;
 }
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		die();
-		break;
-	case 'notify':
-	default:
-		// Only for Notify
-		if (strtolower($CallbackPage) === strtolower('notify')) {
-			if (!$doku_error) {
-				//-----------------------------------------
-				// check if WORDS is match or not
-				//-----------------------------------------
-				if (strtolower($CheckNotifyPaymentStructure['WORDS']) !== strtolower($params_input['words'])) {
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Words from Notify-Structured not same with Dokuparams";
-				}
-			}
-		}
-		//------------------------------------------------------------------------------------------
-		if (!$doku_error) {
-			//---------------------------------
-			// IMPORTANT GLOBAL VARS
-			//---------------------------------
-			$invoiceId = (isset($invoiceId) ? $invoiceId : '');
-			//$transactionId = (isset($dokuparams['APPROVALCODE']) ? $dokuparams['APPROVALCODE'] : '');
-			$transactionId = $invoiceId;
-			/**
-			 * Adding Unique generated Invoice-Id to Transaction-Id
-			 * Got bugs: DOKU always send:
-			 * Constant APPROVALCODE for first time Notify (DOKU Always send same Approval-code for each invoice-id)
-			 * Using @$transaction_id_part
-			*/
-			$transactionId .= "_";
-			if (isset($dokuparams['TRANSIDMERCHANT'])) {
-				$explode_transid = explode("{$invoiceId}_", $dokuparams['TRANSIDMERCHANT']);
-				if (isset($explode_transid[1])) {
-					$transactionId .= sprintf("%s", $explode_transid[1]);
-				}
-			}
-			//$transactionId .= (isset($transaction_id_part) ? $transaction_id_part : '');
-			//$transactionId .= (isset($dokuparams['APPROVALCODE']) ? $dokuparams['APPROVALCODE'] : '');
-			$paymentAmount = (isset($dokuparams['AMOUNT']) ? $dokuparams['AMOUNT'] : 0);
-			$paymentFee = (isset($dokuparams['FEE']) ? $dokuparams['FEE'] : 0);
-			$paymentEDU = (isset($dokuparams['EDUSTATUS']) ? $dokuparams['EDUSTATUS'] : 'NA'); // NA (Default)
-			#
-			$paymentResponseStatus = (isset($dokuparams['RESULTMSG']) ? $dokuparams['RESULTMSG'] : ''); // SUCCESS, VOIDED, FAILED
-			$paymentResponseCode = (isset($dokuparams['RESPONSECODE']) ? $dokuparams['RESPONSECODE'] : ''); // 0000 (Success), Other is failed
-			switch (strtoupper($paymentResponseStatus)) {
-				case 'SUCCESS':
-					$success = TRUE;
-					if ($paymentResponseCode == '0000') {
-						$success = TRUE;
-					} else {
-						$success = FALSE;
-						$doku_error = true;
-						$doku_error_msg[] = "Payment Response Code is Not : 0000 from Payment-Notify.";
-					}
-				break;
-				case 'VOIDED':
-					if ($paymentResponseCode == '0000') {
-						$success = TRUE;
-					} else {
-						$success = FALSE;
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Payment Response Code is Not : 0000.";
-					}
-				break;
-				case 'FAILED':
-					$success = FALSE;
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Payment Response Status is not Success: {$paymentResponseStatus}.";
-				break;
-				default:
-					$success = FALSE;
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Un-Expected Payment-Response-Status: (" . (__LINE__) . ") {$paymentResponseStatus}";
-				break;
-			}
-		}
-		break;
-	case 'redirect':
-		//-------------------------------------------------------------------------------------------------------------
-		/**
-		 * Check Status Payment: Call DOKU
-		 * Applied only for Redirect-Page not for First Time Notify
-		 * ********************************************************
-		*/
-		//-------------------------------------------------------------------------------------------------------------
-		if ($PaymentCheck_Enabled) {
-			if (strtolower($order_status) !== strtolower('paid')) {
-				// Should call to redirect-page
-				//***********************************************************************
-				if (!$doku_error) {
-					// Make checking payment structured
-					# add puchase-currency
-					$params_input['transaction_currency_purchase'] = (isset($dokuparams['PURCHASECURRENCY']) ? $dokuparams['PURCHASECURRENCY'] : '360');
-					$CheckStatusPaymentStructure = $DokuPayment->create_payment_structure('check', 0, $params_input, $dokuparams);
-					$headers = $DokuPayment->create_curl_headers($DokuPayment->dokupayment_headers);
-					if (isset($CheckStatusPaymentStructure['WORDS_STRING'])) {
-						unset($CheckStatusPaymentStructure['WORDS_STRING']);
-					}
-					try {
-						$payment_status = $DokuPayment->create_curl_request('POST', $DokuPayment->endpoint['checkstatus'], 'API.Context (http://whmcs.alumniparhata.org)', $headers, $CheckStatusPaymentStructure, 30);
-					} catch (Exception $ex) {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Exception Error: {$ex->getMessage()}.";
-						throw $ex;
-					}
-				}
-				if (!$doku_error) {
-					if (!isset($payment_status['response']['body'])) {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : There is no body from Doku check -payment-status.";
-					}
-				}
-				// Format XML to Array
-				if (!$doku_error) {
-					# Log payment-status Body
-					//logTransaction($gatewayParams['paymentmethod'], $payment_status['response']['body'], 'Payment Status XML:' . (__LINE__));
-					try {
-						$payment_status = $DokuPayment->xmltoarray($payment_status['response']['body']);
-					} catch (Exception $ex) {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Exception Error while render xml format to array: {$ex->getMessage()}.";
-						throw $ex;
-					}
-				}
-				if (!$doku_error) {
-					if (!isset($payment_status['PAYMENT_STATUS'])) {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : XML Format is not-expected.";
-					}
-				}
-				if (!$doku_error) {
-					if (count($payment_status['PAYMENT_STATUS']) > 0) {
-						foreach ($payment_status['PAYMENT_STATUS'] as $key => $val) {
-							$XMLPaymentStatus[$key] = (isset($val['value']) ? $val['value'] : '');
-						}
-					} else {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Count payment-status not have an array.";
-					}
-				}
-				if (!$doku_error) {
-					// Make checking redirect-payment structured
-					# add transaction-words, transaction-status, transaction-code
-					$params_input['transaction_words'] = (isset($dokuparams['WORDS']) ? $dokuparams['WORDS'] : '');
-					$params_input['transaction_status'] = (isset($dokuparams['STATUSCODE']) ? strval($dokuparams['STATUSCODE']) : ''); // 0000 = Success, Other = Failed
-					$params_input['transaction_channel'] = (isset($dokuparams['PAYMENTCHANNEL']) ? $dokuparams['PAYMENTCHANNEL'] : '');
-					$CheckRedirectPaymentStructure = $DokuPayment->create_payment_structure('redirect', 0, $params_input, $dokuparams);
-					if (strtolower($CallbackPage) === strtolower('redirect')) {
-						//-----------------------------------------
-						// check if WORDS is match or not (On 'redirect' stage)
-						//-----------------------------------------
-						if (strtolower($params_input['transaction_words']) !== strtolower($CheckRedirectPaymentStructure['WORDS'])) {
-							$doku_error = true;
-							$doku_error_msg[] = "STOP : Words from Redirect-Structured not same with Dokuparams.<br/>\n";
-							$doku_error_msg[] .= "Input words: {$params_input['transaction_words']}<br/>\n";
-							$doku_error_msg[] .= "Structured words: {$CheckRedirectPaymentStructure['WORDS']}<br/>\n";
-							/*
-							$doku_error_msg['structured'] = $CheckRedirectPaymentStructure;
-							$doku_error_msg['input'] = $params_input;
-							$doku_error_msg['dokuparams'] = $dokuparams;
-							*/
-						}
-					}
-				}
-				if (!$doku_error) {
-					//---------------------------------
-					// IMPORTANT GLOBAL VARS
-					//---------------------------------
-					$invoiceId = (isset($invoiceId) ? $invoiceId : '');
-					#$transactionId = (isset($XMLPaymentStatus['APPROVALCODE']) ? $XMLPaymentStatus['APPROVALCODE'] : '');
-					$transactionId = $invoiceId;
-					//
-					// Adding Unique generated Invoice-Id to Transaction-Id
-					// Got bugs: DOKU always send:
-					// Constant APPROVALCODE for first time Notify (DOKU Always send same Approval-code foe each invoice-id)
-					// Using @$merchant_transaction[0]
-					//
-					$transactionId .= "_";
-					if (isset($dokuparams['TRANSIDMERCHANT'])) {
-						$explode_transid = explode("{$invoiceId}_", $dokuparams['TRANSIDMERCHANT']);
-						if (isset($explode_transid[1])) {
-							$transactionId .= sprintf("%s", $explode_transid[1]);
-						}
-					}
-					//$transactionId .= (isset($transaction_id_part) ? $transaction_id_part : '');
-					//$transactionId .= (isset($XMLPaymentStatus['APPROVALCODE']) ? $XMLPaymentStatus['APPROVALCODE'] : '');
-					$paymentAmount = (isset($XMLPaymentStatus['AMOUNT']) ? $XMLPaymentStatus['AMOUNT'] : 0);
-					$paymentFee = (isset($XMLPaymentStatus['FEE']) ? $XMLPaymentStatus['FEE'] : 0);
-					$paymentEDU = (isset($XMLPaymentStatus['EDUSTATUS']) ? $XMLPaymentStatus['EDUSTATUS'] : 'NA'); // NA (Default)
-					#
-					$paymentResponseStatus = (isset($XMLPaymentStatus['RESULTMSG']) ? $XMLPaymentStatus['RESULTMSG'] : ''); // SUCCESS, VOIDED, FAILED
-					$paymentResponseCode = (isset($XMLPaymentStatus['RESPONSECODE']) ? $XMLPaymentStatus['RESPONSECODE'] : ''); // 0000 (Success), Other is failed
-				}
-				if (!$doku_error) {
-					// Log payment-status
-					if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $XMLPaymentStatus, "(#{$invoiceId}) " . 'Payment Status Array:' . (__LINE__)); }
-					/*
-					if ($checkCbTransID) {
-						$doku_error = true;
-						$doku_error_msg[] = "checkCbTransID() Return True: Maybe duplicated transaction.";
-					}
-					*/
-				}
-			//***********************************************************************
-			} else {
-				header("HTTP/1.1 301 Moved Permanently");
-				header("Location: {$Redirect_Url}");
-				exit; 
-			}
+
+/**
+ * Payment link.
+ *
+ * Required by third party payment gateway modules only.
+ *
+ * Defines the HTML output displayed on an invoice. Typically consists of an
+ * HTML form that will take the user to the payment gateway endpoint.
+ *
+ * @param array $params Payment Gateway Module Parameters
+ *
+ * @see https://developers.whmcs.com/payment-gateways/third-party-gateway/
+ *
+ * @return string
+ */
+function dokuhosted_link($params) {
+	$Log_Enabled = FALSE;
+	if (isset($params['Log-Enabled'])) {
+		$Log_Enabled = ((strtolower($params['Log-Enabled']) == 'on') ? TRUE : FALSE);
+	}
+	/*
+	echo "<pre>";
+	print_r($params);
+	exit;
+	*/
+	$Environment = (isset($params['Environment']) ? $params['Environment'] : 'sandbox'); // Sandbox as Default-Environment
+	if (!is_string($Environment) && ((!is_array($Environment)) || (!is_object($Environment)))) {
+		if (strtolower($Environment) === strtolower('live')) {
+			// Gateway Configuration Parameters
+			$MallId = (isset($params['MallId_Live']) ? $params['MallId_Live'] : '');
+			$ShopName = (isset($params['ShopName_Live']) ? $params['ShopName_Live'] : '');
+			$ChainMerchant = (isset($params['ChainMerchant_Live']) ? $params['ChainMerchant_Live'] : 'NA');
+			$SharedKey = (isset($params['SharedKey_Live']) ? $params['SharedKey_Live'] : '');
 		} else {
-			if (!$doku_error) {
-				// Make checking redirect-payment structured
-				# add transaction-words, transaction-status, transaction-code
-				$params_input['transaction_words'] = (isset($dokuparams['WORDS']) ? $dokuparams['WORDS'] : '');
-				$params_input['transaction_status'] = (isset($dokuparams['STATUSCODE']) ? strval($dokuparams['STATUSCODE']) : ''); // 0000 = Success, Other = Failed
-				$params_input['transaction_channel'] = (isset($dokuparams['PAYMENTCHANNEL']) ? $dokuparams['PAYMENTCHANNEL'] : '');
-				$CheckRedirectPaymentStructure = $DokuPayment->create_payment_structure('redirect', 0, $params_input, $dokuparams);
-				if (strtolower($CallbackPage) === strtolower('redirect')) {
-					//-----------------------------------------
-					// check if WORDS is match or not (On 'redirect' stage)
-					//-----------------------------------------
-					if (strtolower($params_input['transaction_words']) !== strtolower($CheckRedirectPaymentStructure['WORDS'])) {
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Words from Redirect-Structured not same with Dokuparams. (" . (__LINE__) . ")";
+			// Gateway Configuration Parameters
+			$MallId = (isset($params['MallId']) ? $params['MallId'] : '');
+			$ShopName = (isset($params['ShopName']) ? $params['ShopName'] : '');
+			$ChainMerchant = (isset($params['ChainMerchant']) ? $params['ChainMerchant'] : 'NA');
+			$SharedKey = (isset($params['SharedKey']) ? $params['SharedKey'] : '');
+		}
+	} else {
+		// Gateway Configuration Parameters
+		$MallId = (isset($params['MallId']) ? $params['MallId'] : '');
+		$ShopName = (isset($params['ShopName']) ? $params['ShopName'] : '');
+		$ChainMerchant = (isset($params['ChainMerchant']) ? $params['ChainMerchant'] : 'NA');
+		$SharedKey = (isset($params['SharedKey']) ? $params['SharedKey'] : '');
+	}
+	$LocalApiAdminUsername = (isset($params['Local-Api-Admin-Username']) ? $params['Local-Api-Admin-Username'] : '');
+    //$ExchangeCurrency = (isset($params['ExchangeCurrency']) ? $params['ExchangeCurrency'] : '');
+	//---------
+	// Create DokuPayment Instance
+	//---------
+	$DokuConfigs = array(
+		'isofile'		=> 'dokuhosted/assets/iso3166.json',
+		'merchant'		=> array(
+			'mallid'			=> $MallId,
+			'shopname'			=> $ShopName,
+			'chainmerchant'		=> $ChainMerchant,
+			'sharedkey'			=> $SharedKey,
+		),
+		'endpoint'		=> (is_string($Environment) ? strtolower($Environment) : 'sandbox'), // sandbox as default
+	);
+	##
+	# DokuPayment Instance
+	##
+	$DokuPayment = new dokuhosted_DokuPayment($DokuConfigs);
+	//-----------------------------------------------------
+    // Invoice Parameters
+    $invoiceId = $params['invoiceid'];
+    $description = $params["description"];
+    $amount = $params['amount'];
+    $currencyCode = $params['currency'];
+    // Client Parameters
+    $firstname = $params['clientdetails']['firstname'];
+    $lastname = $params['clientdetails']['lastname'];
+	$fullname = $params['clientdetails']['fullname'];
+    $email = $params['clientdetails']['email'];
+    $address1 = $params['clientdetails']['address1'];
+    $address2 = $params['clientdetails']['address2'];
+    $city = $params['clientdetails']['city'];
+    $state = $params['clientdetails']['state'];
+    $postcode = $params['clientdetails']['postcode'];
+    $country = $params['clientdetails']['country'];
+    $phone = $params['clientdetails']['phonenumber'];
+    // System Parameters
+    $companyName = $params['companyname'];
+    $systemUrl = $params['systemurl'];
+    $returnUrl = $params['returnurl'];
+    $langPayNow = $params['langpaynow'];
+    $moduleDisplayName = $params['name'];
+    $moduleName = $params['paymentmethod'];
+    $whmcsVersion = $params['whmcsVersion'];
+	// POSTFIELDS
+	$postfields = array();
+    $postfields['username'] = $email;
+    $postfields['invoice_id'] = $invoiceId;
+    $postfields['description'] = $description;
+    $postfields['amount'] = $amount;
+    $postfields['currency'] = $currencyCode;
+    $postfields['first_name'] = $firstname;
+    $postfields['last_name'] = $lastname;
+	$postfields['fullname'] = $fullname;
+    $postfields['email'] = $email;
+    $postfields['address1'] = $address1;
+    $postfields['address2'] = $address2;
+    $postfields['city'] = $city;
+    $postfields['state'] = $state;
+    $postfields['postcode'] = $postcode;
+    $postfields['country'] = $country;
+    $postfields['phone'] = $phone;
+    $postfields['callback_url'] = $systemUrl . ((substr($systemUrl, -1) == '/') ? '' : '/') . 'modules/gateways/callback/' . $moduleName . '.php';
+    $postfields['return_url'] = $returnUrl;
+	// Create Unique invoice_id
+	//-------------------------------
+	//$postfields['invoice_id'] = $postfields['invoice_id'] . '_' . (date('YmdHis', time()));
+	$postfields['invoice_id'] = "{$postfields['invoice_id']}_{$postfields['invoice_id']}";
+	//-------------------------------
+	####postfields['invoice_id'] = $postfields['invoice_id'];
+	// AVAILABLE PAYMENT CHANNELS
+	$PaymentChannels = array();
+	$getDokuPaymentChannels = dokuhosted_DokuAdmin::getDokuPaymentConfigs('channels');
+	if (count($getDokuPaymentChannels) > 0) {
+		foreach ($getDokuPaymentChannels as $keval) {
+			if (isset($keval[0])) {
+				if (isset($params["Payment-Channel-{$keval[0]}"])) {
+					if ($params["Payment-Channel-{$keval[0]}"] == 'on') {
+						$channel_code = $keval[0];
+						$channel_name = (isset($keval[1]) ? $keval[1] : '--Un-Named Payment Channel--');
+						$PaymentChannels[] = array(
+							'code'				=> $channel_code,
+							'name'				=> $channel_name,
+						);
 					}
 				}
 			}
-			if (!$doku_error) {
-				if (strtolower($order_status) !== strtolower('paid')) {
-					//---------------------------------
-					// IMPORTANT GLOBAL VARS
-					//---------------------------------
-					$invoiceId = (isset($invoiceId) ? $invoiceId : '');
-					$transactionId = $invoiceId;
-					//
-					// Adding Unique generated Invoice-Id to Transaction-Id
-					// Got bugs: DOKU always send:
-					// Constant APPROVALCODE for first time Notify (DOKU Always send same Approval-code foe each invoice-id)
-					// Using @$merchant_transaction[0]
-					//
-					$transactionId .= "_";
-					if (isset($dokuparams['TRANSIDMERCHANT'])) {
-						$explode_transid = explode("{$invoiceId}_", $dokuparams['TRANSIDMERCHANT']);
-						if (isset($explode_transid[1])) {
-							$transactionId .= sprintf("%s", $explode_transid[1]);
+		}
+	}
+	// AVAILABLE INSTALLMENT BANKS
+	//--------------
+	// MAKE GLOBAL_ACQUIRER_BANKS
+	// GLOBAL OBJECT FOR PROMO OF EACH BANK TENORS
+	$GLOBAL_ACQUIRER_BANKS = array(
+		'onus'		=> [],
+		'offus'		=> [],
+	);
+	//$GLOBAL_ACQUIRER_BANKS = array();
+	# Get Banks
+	$getDokuPaymentAcquirers = dokuhosted_DokuAdmin::getDokuPaymentConfigs('acquirers');
+	//-----------------------
+	// ON US INSTALLMENT
+	//-----------------------
+	if (isset($getDokuPaymentAcquirers['onus'])) {
+		if (count($getDokuPaymentAcquirers['onus']) > 0) {
+			foreach ($getDokuPaymentAcquirers['onus'] as $key => $keval) {
+				if (isset($keval[0])) {
+					if (isset($params["Bank-Installment-Acquirer-Onus-{$keval[0]}"])) {
+						if ($params["Bank-Installment-Acquirer-Onus-{$keval[0]}"] == 'on') {
+							$bank_code = (isset($keval[0]) ? $keval[0] : '100'); // 100 (BNI as Default Bank)
+							$bank_name = (isset($keval[1]) ? $keval[1] : 'Bank BNI'); // 100 (BNI as Default Bank)
+							$GLOBAL_ACQUIRER_BANKS['onus'][] = array(
+								'index'			=> "Bank-Installment-Acquirer-Onus-{$keval[0]}",
+								'code'			=> $bank_code,
+								'name'			=> $bank_name,
+								'tenor'			=> array(),
+							);
 						}
 					}
-					//$transactionId .= (isset($transaction_id_part) ? $transaction_id_part : '');
-					//$transactionId .= (isset($dokuparams['APPROVALCODE']) ? $dokuparams['APPROVALCODE'] : '');
-					$paymentAmount = (isset($dokuparams['AMOUNT']) ? $dokuparams['AMOUNT'] : 0);
-					$paymentFee = (isset($dokuparams['FEE']) ? $dokuparams['FEE'] : 0);
-					$paymentEDU = (isset($dokuparams['EDUSTATUS']) ? $dokuparams['EDUSTATUS'] : 'NA'); // NA (Default)
-					#
-					$paymentResponseStatus = (isset($dokuparams['RESULTMSG']) ? $dokuparams['RESULTMSG'] : ''); // SUCCESS, VOIDED, FAILED
-					$paymentResponseCode = (isset($dokuparams['RESPONSECODE']) ? $XMLPaymentStatus['RESPONSECODE'] : $params_input['transaction_status']); // 0000 (Success), Other is failed
-				} else {
-					header("HTTP/1.1 301 Moved Permanently");
-					header("Location: {$Redirect_Url}");
-					exit;
-				}
-			}
-			if (!$doku_error) {
-				// Log payment-status
-				if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $dokuparams, "(#{$invoiceId}) " . 'Payment Status From Redirected:' . (__LINE__)); }
-				if (strtolower($order_status) !== strtolower('paid')) {
-					// Make Error if Redirected from Un-Success Payment
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Redirected from failed payment: Maybe WHMCS Payment-Gateway-Module not activate payment-check status.";
 				}
 			}
 		}
-		//-------------------------------------------------------------------------------------------------------------
-		break;
-}
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		die();
-		break;
-	case 'notify':
-	case 'redirect':
-	default:
-		if (!$doku_error) {
-			$transactionStatus = ($success ? 'Success' : 'Failure');
-			//-------------------------------------------------------------------------------------------------------------------
-			// EDU Enabled?
-			//-------------------------------------------------------------------------------------------------------------------
-			$transactionEdu = "EDU:APPROVE"; // DEFAULT: For not-enabled EDU
-			if ($success) {
-				if ($EDU_Enabled > 0) {
-					switch (strtoupper($paymentEDU)) {
-						case 'APPROVE':
-							$success = TRUE;
-							$transactionEdu = 'EDU:APPROVE';
-							// Status: Success
-						break;
-						case 'REJECT':
-							$success = FALSE;
-							$transactionEdu = 'EDU:REJECT';
-							// Status: Failed
-						break;
-						case 'NA':
-							$success = FALSE;
-							$transactionEdu = "EDU:NA";
-							// Status: Pending/Waiting
-						break;
-						default:
-							$success = FALSE;
-							$transactionEdu = "EDU:{$paymentEDU}";
-							// Status: Un-Expected
-						break;
+	}
+	if (count($GLOBAL_ACQUIRER_BANKS['onus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['onus'] as $k => $val) {
+			# Get Tenors
+			$getDokuPaymentTenors = dokuhosted_DokuAdmin::getDokuPaymentConfigs('tenors');
+			if ((string)$val['code'] !== strval('100')) { // If NOT BNI
+				if (count($getDokuPaymentTenors) > 0) {
+					foreach ($getDokuPaymentTenors as $keval) {
+						$tenor_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+						$tenor_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+						if (isset($params["{$val['index']}-{$tenor_code}"])) {
+							if ($params["{$val['index']}-{$tenor_code}"] == 'on') {
+								$val_tenor = array(
+									'code'		=> $tenor_code,
+									'name'		=> $tenor_name,
+									'promo'		=> false,
+								);
+								if (isset($params["{$val['index']}-{$tenor_code}-PromoId"])) {
+									if (!empty($params["{$val['index']}-{$tenor_code}-PromoId"]) && (strlen($params["{$val['index']}-{$tenor_code}-PromoId"]) > 0)) {
+										$val_tenor['promo'] = (string)$params["{$val['index']}-{$tenor_code}-PromoId"];
+									}
+								}
+								// Add to GLOBAL_ACQUIRER_BANKS
+								if ($val_tenor['promo'] && ($val_tenor['promo'] != '')) {
+									$GLOBAL_ACQUIRER_BANKS['onus'][$k]['tenor'][] = $val_tenor;
+								}
+							}
+						}
 					}
 				}
-				if ($transactionEdu == 'EDU:APPROVE') {
-					$transactionStatus = 'Success';
-				} else {
-					$transactionStatus = 'Pending';
+			} else {
+				if (count($getDokuPaymentTenors) > 0) {
+					foreach ($getDokuPaymentTenors as $keval) {
+						$tenor_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+						$tenor_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+						if (isset($params["{$val['index']}-{$tenor_code}"])) {
+							if ($params["{$val['index']}-{$tenor_code}"] == 'on') {
+								$val_tenor = array(
+									'code'		=> $tenor_code,
+									'name'		=> $tenor_name,
+									'promo'		=> false,
+								);
+								if (isset($params["{$val['index']}-00"])) { // Only BNI using 00 as Tenor_Code
+									if (!empty($params["{$val['index']}-00"]) && (strlen($params["{$val['index']}-00"]) > 0)) {
+										$val_tenor['promo'] = (string)$params["{$val['index']}-00"];
+									}
+								}
+								// Add to GLOBAL_ACQUIRER_BANKS
+								if ($val_tenor['promo'] && ($val_tenor['promo'] != '')) {
+									$GLOBAL_ACQUIRER_BANKS['onus'][$k]['tenor'][] = $val_tenor;
+								}
+							}
+						}
+					}
 				}
 			}
 		}
-		#############################################################################################################
-		break;
-}
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		die();
-		break;
-	case 'redirect':
-	case 'notify':
-	default:
-		if (!$doku_error) {
-			if (strtolower($order_status) !== strtolower('paid')) {
-				//---------------------------------
-				/**
-				 * Check Callback Transaction ID.
-				 *
-				 * Performs a check for any existing transactions with the same given
-				 * transaction number.
-				 *
-				 * Performs a die upon encountering a duplicate.
-				 *
-				 * @param string $transactionId Unique Transaction ID
+	}
+	//-----------------------
+	// OFF US INSTALLMENT
+	//-----------------------
+	if (isset($getDokuPaymentAcquirers['offus'])) {
+		if (count($getDokuPaymentAcquirers['offus']) > 0) {
+			foreach ($getDokuPaymentAcquirers['offus'] as $key => $keval) {
+				if (isset($keval[0])) {
+					if (isset($params["Bank-Installment-Acquirer-Offus-{$keval[0]}-{$key}"])) {
+						if ($params["Bank-Installment-Acquirer-Offus-{$keval[0]}-{$key}"] == 'on') {
+							$bank_code = (isset($keval[0]) ? $keval[0] : '100'); // 100 (BNI as Default Bank)
+							$bank_name = (isset($keval[1]) ? $keval[1] : 'Bank BNI'); // 100 (BNI as Default Bank)
+							$GLOBAL_ACQUIRER_BANKS['offus'][] = array(
+								'index'			=> "Bank-Installment-Acquirer-Offus-{$keval[0]}-{$key}",
+								'code'			=> $bank_code,
+								'name'			=> $bank_name,
+								'tenor'			=> array(),
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+	if (count($GLOBAL_ACQUIRER_BANKS['offus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['offus'] as $k => $val) {
+			# Get Tenors
+			$getDokuPaymentTenors = dokuhosted_DokuAdmin::getDokuPaymentConfigs('tenors');
+			if ((string)$val['code'] !== strval('000')) { // If NOT BNI
+				if (count($getDokuPaymentTenors) > 0) {
+					foreach ($getDokuPaymentTenors as $keval) {
+						$tenor_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+						$tenor_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+						if (isset($params["{$val['index']}-{$tenor_code}"])) {
+							if ($params["{$val['index']}-{$tenor_code}"] == 'on') {
+								$val_tenor = array(
+									'code'		=> $tenor_code,
+									'name'		=> $tenor_name,
+									'promo'		=> false,
+								);
+								if (isset($params["{$val['index']}-{$tenor_code}-PromoId"])) {
+									if (!empty($params["{$val['index']}-{$tenor_code}-PromoId"]) && (strlen($params["{$val['index']}-{$tenor_code}-PromoId"]) > 0)) {
+										$val_tenor['promo'] = (string)$params["{$val['index']}-{$tenor_code}-PromoId"];
+									}
+								}
+								// Add to GLOBAL_ACQUIRER_BANKS
+								if ($val_tenor['promo'] && ($val_tenor['promo'] != '')) {
+									$GLOBAL_ACQUIRER_BANKS['offus'][$k]['tenor'][] = $val_tenor;
+								}
+							}
+						}
+					}
+				}
+			} else {
+				if (count($getDokuPaymentTenors) > 0) {
+					foreach ($getDokuPaymentTenors as $keval) {
+						$tenor_code = (isset($keval[0]) ? $keval[0] : '03'); // (03 Months as Default Tenor)
+						$tenor_name = (isset($keval[1]) ? $keval[1] : '03 Bulan'); // (03 Months as Default Tenor)
+						if (isset($params["{$val['index']}-{$tenor_code}"])) {
+							if ($params["{$val['index']}-{$tenor_code}"] == 'on') {
+								$val_tenor = array(
+									'code'		=> $tenor_code,
+									'name'		=> $tenor_name,
+									'promo'		=> false,
+								);
+								if (isset($params["{$val['index']}-00"])) { // Only BNI using 00 as Tenor_Code
+									if (!empty($params["{$val['index']}-00"]) && (strlen($params["{$val['index']}-00"]) > 0)) {
+										$val_tenor['promo'] = (string)$params["{$val['index']}-00"];
+									}
+								}
+								// Add to GLOBAL_ACQUIRER_BANKS
+								if ($val_tenor['promo'] && ($val_tenor['promo'] != '')) {
+									$GLOBAL_ACQUIRER_BANKS['offus'][$k]['tenor'][] = $val_tenor;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	//---------------------------------------------
+	# Make Front-End of available installment banks
+	$BankInstallmentActive = array(
+		'onus'				=> array(),
+		'offus'				=> array(),
+	);
+	$InstallmentBanks = array();
+	// From On-us
+	if (count($GLOBAL_ACQUIRER_BANKS['onus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['onus'] as $k => $keval) {
+			/**
+			 * @string index
+			 * @string code
+			 * @string name
+			 * @array tenor
+			 **** @string code
+				* @string name
+			 **** @string promo
+			*/
+			if (isset($keval['tenor']) && (isset($keval['code']))) {
+				$installment_code = $keval['code'];
+				if (count($keval['tenor']) > 0) {
+					array_push($BankInstallmentActive['onus'], $keval);
+					//$InstallmentBanks[] = $keval;
+				}
+			}
+		}
+	}
+	// From Off-us
+	if (count($GLOBAL_ACQUIRER_BANKS['offus']) > 0) {
+		foreach ($GLOBAL_ACQUIRER_BANKS['offus'] as $k => $keval) {
+			/**
+			 * @string index
+			 * @string code
+			 * @string name
+			 * @array tenor
+			 **** @string code
+				* @string name
+			 **** @string promo
+			*/
+			if (isset($keval['tenor']) && (isset($keval['code']))) {
+				$installment_code = $keval['code'];
+				if (count($keval['tenor']) > 0) {
+					array_push($BankInstallmentActive['offus'], $keval);
+					//$InstallmentBanks[] = $keval;
+				}
+			}
+		}
+	}
+	//-------------------------
+	// Get Active
+	//----
+	if (strtoupper($params['Installment-Enabled']) === strtoupper('ONUS')) {
+		if (count($BankInstallmentActive['onus']) > 0) {
+			foreach ($BankInstallmentActive['onus'] as $keval) {
+				$InstallmentBanks[] = $keval;
+			}
+		}
+	} else if (strtoupper($params['Installment-Enabled']) === strtoupper('OFFUS')) {
+		if (count($BankInstallmentActive['offus']) > 0) {
+			foreach ($BankInstallmentActive['offus'] as $keval) {
+				$InstallmentBanks[] = $keval;
+			}
+		}
+	}
+	
+	
+	//Log for orders
+	if ($Log_Enabled) {
+		logTransaction($moduleName, $params, "(WHMCS-params)");
+	}
+	
+	###########################
+	# HTML Output
+	###########################
+	$returnHtml = "";
+	# URL Of Payment-Request
+	//---------------------------------------------------
+	// Start Of Form
+	$returnHtml .= '<form name="formRedirect" id="formRedirect" action="' . $DokuPayment->endpoint['request'] . '" method="post">';
+	// Create input to DokuPayment Instance
+	$params_input = array(
+		'transaction_id'			=> $postfields['invoice_id'], // Create unique request_id
+		'transaction_currency'		=> strtoupper(substr($postfields['currency'], 0, 2)),
+		'transaction_datetime'		=> date('YmdHis', time()),
+		'transaction_session'		=> (isset($params['clientdetails']['uuid']) ? $params['clientdetails']['uuid'] : ''),
+		'amount_total'				=> 0,
+	);
+	$params_input['transaction_session'] = md5($params_input['transaction_session']);
+	# Temporary for fees items, nex from $logsync['item_lists']
+	###########################################################
+	$params_input['items'] = Array();
+	$item_invoices = array(
+		'item_id' 				=> (isset($params['invoicenum']) ? $params['invoicenum'] : 1),
+		'order_price' 			=> (isset($params['amount']) ? $params['amount'] : 0),
+		'order_unit'			=> 1,
+		'order_item_name'		=> $postfields['description'],
+	);
+	array_push($params_input['items'], $item_invoices);
+	foreach ($params_input['items'] as $val) {
+		$params_input['amount_total'] += ($val['order_price'] * $val['order_unit']);
+	}
+	$user_input = array(
+		'name' 		=> $postfields['fullname'], // Should be an user input tmn account
+		'email' 	=> $postfields['email'], 	// Should be an user input tmn email or myarena email
+		'shipping_address'	=> array(							// Input or generate randomly or API to MyArena Account?
+			'forename'					=> $postfields['first_name'],
+			'surname'					=> $postfields['last_name'],
+			'fullname'					=> $postfields['fullname'],
+			'email'						=> $postfields['email'],
+			'phone'						=> $postfields['phone'],
+			'SHIPPING_ADDRESS'			=> '',
+			'SHIPPING_CITY'				=> $postfields['city'],
+			'SHIPPING_STATE'			=> $postfields['state'],
+			'SHIPPING_COUNTRY'			=> $postfields['country'],
+			'SHIPPING_ZIPCODE'			=> $postfields['postcode'],
+			'ADDITIONALDATA'			=> $postfields['description'],
+		),
+	);
+	$user_input['shipping_address']['SHIPPING_ADDRESS'] .= (isset($postfields['address1']) ? $postfields['address1'] : '');
+	$user_input['shipping_address']['SHIPPING_ADDRESS'] .= (isset($postfields['address2']) ? ((strlen($postfields['address2']) > 0) ? " {$postfields['address2']}" : '') : '');
+	# Create Verify Payment Structure
+	$createPaymentStructure = $DokuPayment->create_payment_structure('create', 0, $params_input, $user_input, $params_input['items'], $user_input['shipping_address']);
+	$PaymentStructure = array(
+		'words_sha1'			=> (isset($createPaymentStructure['WORDS']) ? $createPaymentStructure['WORDS'] : ""),
+		'words_string'			=> (isset($createPaymentStructure['WORDS_STRING']) ? $createPaymentStructure['WORDS_STRING'] : ""),
+		'session_id'			=> (isset($createPaymentStructure['SESSIONID']) ? $createPaymentStructure['SESSIONID'] : ""),
+	);
+	// Generate Unique SESSIONID Every single payment
+	$PaymentStructure['session_id'] = sha1("{$PaymentStructure['session_id']}{$DokuPayment->generate_transaction_id()}");
+	if ((isset($createPaymentStructure['WORDS_STRING'])) && (isset($createPaymentStructure['SESSIONID']))) {
+		unset($createPaymentStructure['WORDS_STRING']);
+		$PaymentStructureJson = json_encode($createPaymentStructure, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+		// do any log ....
+		$makepayment_data = json_decode($PaymentStructureJson, true, 512, JSON_BIGINT_AS_STRING);
+		ksort($makepayment_data);
+		// Sanitize URL
+		$makepayment_data = $DokuPayment->sanitize_string_parameter($makepayment_data);
+		if ($Log_Enabled) {
+			logTransaction($moduleName, $makepayment_data, "(WHMCS) REQUEST-PAYMENT");
+		}
+		//------------------
+		// return HTML
+		if (count($makepayment_data) > 0) {
+			foreach ($makepayment_data as $key => $val) {
+				$returnHtml .= "<input type='hidden' id='{$key}' name='{$key}' value='{$val}' />";
+			}
+		}
+	}
+	// payment-channel selections
+	if (count($PaymentChannels) > 0) {
+		$returnHtml .= '<div class="small-text"><span style="font-weight:bold;">Select Payment Channel</span></div>';
+		$returnHtml .= '<div class="small-text">';
+			$returnHtml .= '<select id="PAYMENTCHANNEL" name="PAYMENTCHANNEL">';
+				foreach ($PaymentChannels as $keval) {
+					if (isset($keval['code']) && ($keval['code'] != '01')) {
+						$returnHtml .= '<option value="' . (isset($keval['code']) ? (($keval['code'] != '00') ? $keval['code'] : '') : '') . '">';
+						$returnHtml .= (isset($keval['name']) ? $keval['name'] : '-');
+						$returnHtml .= '</option>';
+					} else {
+						if (count($InstallmentBanks) > 0) {
+							$returnHtml .= '<option value="' . (isset($keval['code']) ? (($keval['code'] != '00') ? $keval['code'] : '') : '') . '">';
+							$returnHtml .= (isset($keval['name']) ? $keval['name'] : '-');
+							$returnHtml .= '</option>';
+						}
+					}
+				}
+			$returnHtml .= '</select>';
+		$returnHtml .= '</div>';
+		// Another params for payment-channel selected
+		$add_html = "";
+		$add_html .= '<div id="add-html-cc" style="display:none;">';
+		$add_html .= '<input type="hidden" id="INSTALLMENT_ACQUIRER" name="INSTALLMENT_ACQUIRER" value="'.(isset($InstallmentBanks[0]['code']) ? $InstallmentBanks[0]['code'] : '').'" />';
+		$add_html .= '<input type="hidden" id="TENOR" name="TENOR" value="'.(isset($InstallmentBanks[0]['tenor']['code']) ? $InstallmentBanks[0]['tenor']['code'] : '').'" />';
+		$add_html .= '<input type="hidden" id="PROMOID" name="PROMOID" value="'.(isset($InstallmentBanks[0]['tenor']['promo']) ? $InstallmentBanks[0]['tenor']['promo'] : '').'" />';
+		$add_html .= '</div>';
+		// ADD TO @$returnHtml
+		$returnHtml .= $add_html;
+    }
+	// payment installment acquirer banks, promo, and tenor
+	//--------------
+	$returnHtml .= '<div id="html-installment-payment" style="display:none;">';
+		if (count($InstallmentBanks) > 0) {
+			$returnHtml .= '<div class="small-text"><span style="font-weight:bold;">Select Acquirer Bank</span></div>';
+			$returnHtml .= '<div class="small-text">';
+				$returnHtml .= '<select id="bank_installment_acquirers" name="bank_installment_acquirers">';
+					$tenor_printout = array();
+					// Default -- Select Acquirer Bank --
+					$returnHtml .= '<option value="">-- Select Acquirer Bank --</option>';
+					foreach ($InstallmentBanks as $k => $keval) {
+						/*
+						 * @string index
+						 * @string code
+						 * @string name
+						 * @array tenor
+						 **** @string code
+							* @string name
+						 **** @string promo
+						*/
+						$bank_code = (isset($keval['code']) ? strval($keval['code']) : '100');
+						if (strtoupper($params['Installment-Enabled']) === strtoupper('OFFUS')) {
+							$bank_code .= "-{$k}";
+						}
+						$tenor_printout[$bank_code] = array();
+						$returnHtml .= '<option value="' . $bank_code . '">';
+						$returnHtml .= (isset($keval['name']) ? $keval['name'] : '-');
+						$returnHtml .= '</option>';
+						// tenor-printout
+						if (isset($keval['tenor'])) {
+							if (count($keval['tenor']) > 0) {
+								foreach ($keval['tenor'] as $tenorVal) {
+									$tenorKey = (isset($tenorVal['code']) ? $tenorVal['code'] : '03');
+									$tenorKey = (string)$tenorKey;
+									$tenor_printout[$bank_code][$tenorKey] = "";
+									$tenor_printout[$bank_code][$tenorKey] .= (isset($tenorVal['code']) ? strval($tenorVal['code']) : '');
+									$tenor_printout[$bank_code][$tenorKey] .= "|";
+									$tenor_printout[$bank_code][$tenorKey] .= (isset($tenorVal['promo']) ? strval($tenorVal['promo']) : '');
+									$tenor_printout[$bank_code][$tenorKey] .= "|";
+									$tenor_printout[$bank_code][$tenorKey] .= (isset($tenorVal['name']) ? strval($tenorVal['name']) : '');
+								}
+							}
+						}
+					}
+				$returnHtml .= '</select>';
+			$returnHtml .= '</div>';
+		}
+		// Tenor placeholder
+		$returnHtml .= '<div class="small-text"><span style="font-weight:bold;">Select Tenor</span></div>';
+		$returnHtml .= '<div class="small-text">';
+			$returnHtml .= '<select id="TENOR_PROMO" name="TENOR_PROMO">';
+				$returnHtml .= '<option value=\'00\'>-- Select Tenor --</option>';
+			$returnHtml .= '</select>';
+		$returnHtml .= '</div>';
+	$returnHtml .= '</div>';
+	// End of Form
+	$returnHtml .= '</form>';
+	// Create padding
+	$returnHtml .= '<div class="row">';
+	$returnHtml .= '<div style="margin-top:12px;">&nbsp;</div>';
+	$returnHtml .= '</div>';
+	// DOKU Description
+	$dokuDesc = (isset($params['Description-Payment-Gateway']) ? $params['Description-Payment-Gateway'] : '');
+	$dokuDesc = filter_var($dokuDesc, FILTER_SANITIZE_STRING);
+	$returnHtml .= '<div class="row">';
+	$returnHtml .= '<div class="small-text"><img alt="doku" src="http://doku.com/themes/default/images/logo-doku-merchant.png" align="left" style="padding-right:12px;" />' . $dokuDesc . '</div>';
+	$returnHtml .= '</div>';
+	
+	//Javascript for payment-channel-placeholder
+	$js = "";
+	$js .= '<script type="text/javascript">';
+	$js .= 'var form_object = document.getElementById("formRedirect");';
+	$js .= 'var form_installment = document.getElementById("html-installment-payment");';
+	$js .= 'var payment_channels = document.getElementById("PAYMENTCHANNEL");';
+	$js .= 'var bank_installment_acquirers = document.getElementById("bank_installment_acquirers");';
+	$js .= 'var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER"), add_installment_tenor = document.getElementById("TENOR"), add_installment_promoid = document.getElementById("PROMOID");';
+	$js .= 'var add_html_cc = document.getElementById("add-html-cc");';
+	$js .= 'var form_paymenttype = document.getElementById("PAYMENTTYPE");';
+	$js .= 'var form_tenor_promo = document.getElementById("TENOR_PROMO");';
+	$js .= 'payment_channels.addEventListener("change", function() {
+				if (this.value == "") {
+					form_paymenttype.value = "SALE";
+					add_html_cc.style.display = "none";
+				} else {
+					if (this.value == "01") {
+						//payment_channels.value = "15";
+						form_paymenttype.value = "'.$params['Installment-Enabled'].'";
+						//------------------------------------
+						add_html_cc.style.display = null;
+						var add_html_cc_name = document.createElement("input");
+						add_html_cc_name.setAttribute("type", "hidden");
+						add_html_cc_name.setAttribute("name", "CC_NAME");
+						add_html_cc_name.setAttribute("id", "CC_NAME");
+						add_html_cc_name.setAttribute("value", "'.$postfields['fullname'].'");
+						form_object.appendChild(add_html_cc_name);
+						//--------------------------------------
+						form_installment.style.display = null;
+					} else if (this.value == "16") {
+						form_paymenttype.value = "SALE";
+						add_html_cc.style.display = "none";
+						form_installment.style.display = "none";
+						var add_html_cc_name = document.createElement("input");
+						add_html_cc_name.setAttribute("type", "hidden");
+						add_html_cc_name.setAttribute("name", "CUSTOMERID");
+						add_html_cc_name.setAttribute("id", "CUSTOMERID");
+						add_html_cc_name.setAttribute("value", "' . (isset($params['clientdetails']['userid']) ? $params['clientdetails']['userid'] : '') . '");
+						form_object.appendChild(add_html_cc_name);
+					} else {
+						form_paymenttype.value = "SALE";
+						add_html_cc.style.display = "none";
+						form_installment.style.display = "none";
+						// remove not mandatory
+						/*
+						if (add_installment_acquirer != null) {
+							add_installment_acquirer.remove();
+						}
+						if (add_tenor != null) {
+							add_tenor.remove();
+						}
+						if (add_promoid != null) {
+							add_promoid.remove();
+						}
+						*/
+					}
+				}
+				//alert("form_paymenttype: " + form_paymenttype.value + ", payment_channels: " + this.value);
+			}, true);';
+	
+	/*
+	 * @string index
+	 * @string code
+	 * @string name
+	 * @array tenor
+	 **** @string code
+		* @string name
+	 **** @string promo
+	*/
+	$js .= 'var available_tenor = [];';
+	if (isset($tenor_printout) && (count($tenor_printout) > 0)) {
+		foreach ($tenor_printout as $k => $tenorval) {
+			$av_key = $k;
+			if (is_array($tenorval)) {
+				/*
+				$js_k = explode("-", $k);
+				if (isset($js_k[1])) {
+					$av_key = ((int)$js_k[0] - (int)$js_k[1]);
+				} else {
+					$av_key = $k;
+				}
 				*/
-				checkCbTransID($transactionId);
+				$js .= 'available_tenor["' . $av_key . '"] = ' . json_encode($tenorval) . ';';
 			}
 		}
-		break;
-}
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		die();
-		break;
-	case 'redirect':
-		#############################################################################################################
-		# CALL VOID?
-		#############################################################################################################
-		//-------------------------------------------------------------------------------------------------------------------
-		if ($Void_Enabled) {
-			if (!$doku_error) {
-				$VoidParams = array(
-					'transaction_id'		=> (isset($XMLPaymentStatus['TRANSIDMERCHANT']) ? $XMLPaymentStatus['TRANSIDMERCHANT'] : ''),
-					'transaction_session'	=> (isset($XMLPaymentStatus['SESSIONID']) ? $XMLPaymentStatus['SESSIONID'] : ''),
-					'transaction_currency'	=> (isset($XMLPaymentStatus['CURRENCY']) ? $XMLPaymentStatus['CURRENCY'] : '360'),
-					'transaction_channel'	=> (isset($XMLPaymentStatus['PAYMENTCHANNEL']) ? $XMLPaymentStatus['PAYMENTCHANNEL'] : ''),
-				);
-				$createVoidStructure = $DokuPayment->create_payment_structure('void', 0, $VoidParams, $dokuparams);
-				if (isset($createVoidStructure['WORDS_STRING'])) {
-					unset($createVoidStructure['WORDS_STRING']);
-				}
-				$headers = $DokuPayment->create_curl_headers($DokuPayment->dokupayment_headers);
-				try {
-					$create_void = $DokuPayment->create_curl_request('POST', $DokuPayment->endpoint['void'], 'API.Context (http://whmcs.alumniparhata.org) - Change this as you wish.', $headers, $createVoidStructure, 30);
-				} catch (Exception $ex) {
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Error exception for create void: {$ex->getMessage()}.";
-					throw $ex;
-				}
-			}
-			if (!$doku_error) {
-				if (!isset($create_void['response']['body'])) {
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : There is no body response from Void response.";
-				}
-			}
-			if (!$doku_error) {
-				$StringVoidStatus = trim($create_void['response']['body']);
-				switch (strtoupper($StringVoidStatus)) {
-					case 'FAILED':
-						// Do what to do if Failed VOID
-						if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $create_void, "Payment Void: ". strtoupper($StringVoidStatus)); }
-					break;
-					case 'SUCCESS':
-						// Do what to do if Success VOID
-						if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $create_void, "Payment Void: ". strtoupper($StringVoidStatus)); }
-					break;
-					default:
-						// DO what to do if Un-expected VOID
-						if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $create_void, "Payment Void: UN-EXPECTED ({$StringVoidStatus})"); }
-					break;
-				}
-			}
-		}
-		#############################################################################################################
-		//-------------------------------------------------------------------------------------------------------------------
-		if (!$doku_error) {
-			switch (strtoupper($paymentResponseStatus)) {
-				case 'SUCCESS':
-					$success = TRUE;
-				break;
-				case 'VOIDED':
-					if ($paymentResponseCode == '0000') {
-						$success = TRUE;
-					} else {
-						$success = FALSE;
-						$doku_error = true;
-						$doku_error_msg[] = "STOP : Payment Response Code is Not : 0000.";
-					}
-				break;
-				case 'FAILED':
-					$success = FALSE;
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Payment Response Status is not Success: {$paymentResponseStatus}.";
-				break;
-				default:
-					$success = FALSE;
-					$doku_error = true;
-					$doku_error_msg[] = "STOP : Un-Expected Payment-Response-Status on Line (" . (__LINE__) . "): {$paymentResponseStatus}";
-					$doku_error_msg['XMLPaymentStatus'] = $XMLPaymentStatus;
-				break;
-			}
-		}
-		if (!$doku_error) {
-			if (strtolower($order_status) !== strtolower('paid')) {
-				$REQUEST_METHOD_MSG = "REDIRECT:Continue";
-			} else {
-				header("HTTP/1.1 301 Moved Permanently");
-				header("Location: {$Redirect_Url}");
-				exit;
-			}
-		}
-		break;
-	case 'notify':
-	default:
-		$REQUEST_METHOD_MSG = "CONTINUE";
-		break;
-}
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'redirect':
-	case 'notify':
-	default:
-		if (!$doku_error) {
-			/**
-			 * Log Transaction.
-			 *
-			 * Add an entry to the Gateway Log for debugging purposes.
-			 *
-			 * The debug data can be a string or an array. In the case of an
-			 * array it will be
-			 *
-			 * @param string $gatewayName        Display label
-			 * @param string|array $debugData    Data to log
-			 * @param string $transactionStatus  Status
-			*/
-			if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], $XMLPaymentStatus, $transactionStatus); }
-			if ($success) {
-				/**
-				 * Add Invoice Payment.
-				 *
-				 * Applies a payment transaction entry to the given invoice ID.
-				 *
-				 * @param int $invoiceId         Invoice ID
-				 * @param string $transactionId  Transaction ID
-				 * @param float $paymentAmount   Amount paid (defaults to full balance)
-				 * @param float $paymentFee      Payment fee (optional)
-				 * @param string $gatewayModule  Gateway module name
-				 */
-				addInvoicePayment(
-					$invoiceId,
-					$transactionId,
-					$paymentAmount,
-					$paymentFee,
-					$gatewayModuleName
-				);
-			}
-		} else {
-			if ($Log_Enabled) { logTransaction($gatewayParams['paymentmethod'], array('STOP' => $doku_error_msg), "(doku_error): Failed"); }
-		}
-		break;
-	case 'review':
-	case 'identify':
-		die();
-		break;
-}
-/*
-**
-* CONTINUE
-**
-*/
-switch (strtolower($CallbackPage)) {
-	case 'review':
-	case 'identify':
-		if (!$doku_error) {
-			echo $REQUEST_METHOD_MSG;
-		} else {
-			print_r($doku_error_msg);
-		}
-	case 'notify':
-	default:	
-		if (!$doku_error) {
-			echo $REQUEST_METHOD_MSG;
-		} else {
-			echo "STOP\r\n";
-			if (count($doku_error_msg) > 0) {
-				foreach ($doku_error_msg as $keval) {
-					echo $keval . "\n";
-				}
-			}
-		}
-		break;
-	case 'redirect':
-		header("HTTP/1.1 301 Moved Permanently");
-		header("Location: {$Redirect_Url}");
-		exit;
-		break;
-}	
+	}
+	$tenorJs = '';
+	$js .= 'bank_installment_acquirers.addEventListener("change", function() {
+			//var placeholder_tenor = document.getElementById("TENOR");
+			//var placeholder_promo = document.getElementById("PROMOID");
+			var tenor_innerhtml = "";
+			var this_select_val = this.value;
+			';
+			//$tenorJs = "tenor_innerhtml += '<option value=\'00\'>-- Select Tenor --</option>';";
+			$tenorJs .= "if ('03' in available_tenor[this.value]) {
+				var tenor_code_promo_name_tiga = available_tenor[this.value]['03'].split('|');
+				tenor_innerhtml += '<option value=\'' + tenor_code_promo_name_tiga[0] + '|' + tenor_code_promo_name_tiga[1] + '\'>';
+				tenor_innerhtml += tenor_code_promo_name_tiga[2];
+				tenor_innerhtml += '</option>';
+			}";
+			$tenorJs .= "if ('06' in available_tenor[this.value]) {
+				var tenor_code_promo_name_enam = available_tenor[this.value]['06'].split('|');
+				tenor_innerhtml += '<option value=\'' + tenor_code_promo_name_enam[0] + '|' + tenor_code_promo_name_enam[1] + '\'>';
+				tenor_innerhtml += tenor_code_promo_name_enam[2];
+				tenor_innerhtml += '</option>';
+			}";
+			$tenorJs .= "if ('12' in available_tenor[this.value]) {
+				var tenor_code_promo_name_duabelas = available_tenor[this.value]['12'].split('|');
+				tenor_innerhtml += '<option value=\'' + tenor_code_promo_name_duabelas[0] + '|' + tenor_code_promo_name_duabelas[1] + '\'>';
+				tenor_innerhtml += tenor_code_promo_name_duabelas[2];
+				tenor_innerhtml += '</option>';
+			}";
+			$tenorJs .= 'form_tenor_promo.innerHTML = tenor_innerhtml;';
+		$js .= $tenorJs;	
+			
+		$js .= '
 		
+				var acquirer_promo = this.value.split("|");
+				add_installment_acquirer.value = acquirer_promo[0];
+				//add_installment_promoid.value = acquirer_promo[1];
+			}, false);';
+	$js .= '</script>';
+	/*
+			for(var k in result) {
+				console.log(k, result[k]);
+			}
+	--Create an input type dynamically.
+    var element = document.createElement("input");
+	--Assign different attributes to the element.
+    element.setAttribute("type", "hidden");
+    element.setAttribute("name", "TENOR");
+    element.setAttribute("id", "TENOR");
+	element.setAttribute("value", "TENOR-VALUE");
+	*/
+	// Submit button
+	$returnHtml .= '<a href="javascript:;" onclick="javascript:onSubmitToPayment();"><img alt="'.$params['langpaynow'].'" src="/modules/gateways/dokuhosted/assets/doku-button.png" title="'.$params['langpaynow'].'" /></a>';
+	
+	// Javascript for submit
+	$returnHtml .= $js;
+	$js_submit = '<script type="text/javascript">';
+	$js_submit .= 'function onSubmitToPayment() {
+			var payment_channels = document.getElementById("PAYMENTCHANNEL");
+			var payment_channels_value = payment_channels.value;
+			var installment_tenor_promo = document.getElementById("TENOR_PROMO");
+			var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER"), add_installment_tenor = document.getElementById("TENOR"), add_installment_promoid = document.getElementById("PROMOID");
+			if (payment_channels_value == "01") {
+			 payment_channels.value = "15";
+			 var isi_tenor_dan_promo = installment_tenor_promo.value.split("|");
+			 add_installment_tenor.value = isi_tenor_dan_promo[0];
+			 add_installment_promoid.value = isi_tenor_dan_promo[1];
+			 var isi_installment_acquirer = add_installment_acquirer.value.split("-");
+			 add_installment_acquirer.value = isi_installment_acquirer[0];
+			} else {
+			 var add_installment_acquirer = document.getElementById("INSTALLMENT_ACQUIRER");
+			 var add_installment_tenor = document.getElementById("TENOR");
+			 var add_installment_promoid = document.getElementById("PROMOID");
+			 var add_installment_tenorpromo = document.getElementById("TENOR_PROMO");
+			 add_installment_acquirer.remove();
+			 add_installment_tenor.remove();
+			 add_installment_promoid.remove();
+			 add_installment_tenorpromo.remove();
+			 
+			 add_installment_acquirer.removeAttribute("name");
+			 add_installment_tenor.removeAttribute("name");
+			 add_installment_promoid.removeAttribute("name");
+			 add_installment_tenorpromo.removeAttribute("name");
+			}
+			document.getElementById("formRedirect").submit();
+		   }';
+	$js_submit .= '</script>';
+			
+	$returnHtml .= $js_submit;
+	
+    return $returnHtml;
+}
+
+/**
+ * Refund transaction.
+ *
+ * Called when a refund is requested for a previously successful transaction.
+ *
+ * @param array $params Payment Gateway Module Parameters
+ *
+ * @see https://developers.whmcs.com/payment-gateways/refunds/
+ *
+ * @return array Transaction response status
+ */
+function dokuhosted_refund($params) {
+    // Gateway Configuration Parameters
+    $accountId = $params['accountID'];
+    $secretKey = $params['secretKey'];
+    $testMode = $params['testMode'];
+    $dropdownField = $params['dropdownField'];
+    $radioField = $params['radioField'];
+    $textareaField = $params['textareaField'];
+
+    // Transaction Parameters
+    $transactionIdToRefund = $params['transid'];
+    $refundAmount = $params['amount'];
+    $currencyCode = $params['currency'];
+
+    // Client Parameters
+    $firstname = $params['clientdetails']['firstname'];
+    $lastname = $params['clientdetails']['lastname'];
+    $email = $params['clientdetails']['email'];
+    $address1 = $params['clientdetails']['address1'];
+    $address2 = $params['clientdetails']['address2'];
+    $city = $params['clientdetails']['city'];
+    $state = $params['clientdetails']['state'];
+    $postcode = $params['clientdetails']['postcode'];
+    $country = $params['clientdetails']['country'];
+    $phone = $params['clientdetails']['phonenumber'];
+
+    // System Parameters
+    $companyName = $params['companyname'];
+    $systemUrl = $params['systemurl'];
+    $langPayNow = $params['langpaynow'];
+    $moduleDisplayName = $params['name'];
+    $moduleName = $params['paymentmethod'];
+    $whmcsVersion = $params['whmcsVersion'];
+
+    // perform API call to initiate refund and interpret result
+
+    return array(
+        // 'success' if successful, otherwise 'declined', 'error' for failure
+        'status' => 'success',
+        // Data to be recorded in the gateway log - can be a string or array
+        'rawdata' => $responseData,
+        // Unique Transaction ID for the refund transaction
+        'transid' => $refundTransactionId,
+        // Optional fee amount for the fee value refunded
+        'fees' => $feeAmount,
+    );
+}
+
+/**
+ * Cancel subscription.
+ *
+ * If the payment gateway creates subscriptions and stores the subscription
+ * ID in tblhosting.subscriptionid, this function is called upon cancellation
+ * or request by an admin user.
+ *
+ * @param array $params Payment Gateway Module Parameters
+ *
+ * @see https://developers.whmcs.com/payment-gateways/subscription-management/
+ *
+ * @return array Transaction response status
+ */
+function dokuhosted_cancelSubscription($params)
+{
+    // Gateway Configuration Parameters
+    $accountId = $params['accountID'];
+    $secretKey = $params['secretKey'];
+    $testMode = $params['testMode'];
+    $dropdownField = $params['dropdownField'];
+    $radioField = $params['radioField'];
+    $textareaField = $params['textareaField'];
+
+    // Subscription Parameters
+    $subscriptionIdToCancel = $params['subscriptionID'];
+
+    // System Parameters
+    $companyName = $params['companyname'];
+    $systemUrl = $params['systemurl'];
+    $langPayNow = $params['langpaynow'];
+    $moduleDisplayName = $params['name'];
+    $moduleName = $params['paymentmethod'];
+    $whmcsVersion = $params['whmcsVersion'];
+
+    // perform API call to cancel subscription and interpret result
+
+    return array(
+        // 'success' if successful, any other value for failure
+        'status' => 'success',
+        // Data to be recorded in the gateway log - can be a string or array
+        'rawdata' => $responseData,
+    );
+}
+
+
+
