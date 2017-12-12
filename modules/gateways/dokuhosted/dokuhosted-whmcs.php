@@ -880,6 +880,18 @@ class dokuhosted_DokuPayment {
 		$filename = trim($filename, '.-_');
 		$filename;
 	}
+	function sanitize_string_parameter($params_input = array()) {
+		$sanitized = [];
+		if (count($params_input) > 0) {
+			foreach ($params_input as $key => $keval) {
+				if (!is_array($keval) || (!is_object($keval))) {
+					$keval = filter_var($keval, FILTER_SANITIZE_STRING);
+				}
+				$sanitized[$key] = $keval;
+			}
+		}
+		return $sanitized;
+	}
 	function sanitize_url_parameter($params_input = array()) {
 		$sanitized = [];
 		if (count($params_input) > 0) {
