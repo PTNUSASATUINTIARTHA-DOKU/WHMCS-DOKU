@@ -60,14 +60,36 @@ if (!$gatewayParams['type']) {
     die("Module Not Activated");
 }
 $Environment = (isset($gatewayParams['Environment']) ? $gatewayParams['Environment'] : 'sandbox'); // Let sandbox as default
-$DokuConfigs = array(
-	'isofile'		=> 'dokuhosted/assets/iso3166.json',
-	'merchant'		=> array(
+if (is_string($Environment)) {
+	if (strtolower($Environment) === strtolower('live')) {
+		// Gateway Configuration Parameters
+		$Whmcs_Merchant = array(
+			'mallid'			=> (isset($gatewayParams['MallId_Live']) ? $gatewayParams['MallId_Live'] : ''),
+			'shopname'			=> (isset($gatewayParams['ShopName_Live']) ? $gatewayParams['ShopName_Live'] : ''),
+			'chainmerchant'		=> (isset($gatewayParams['ChainMerchant_Live']) ? $gatewayParams['ChainMerchant_Live'] : ''),
+			'sharedkey'			=> (isset($gatewayParams['SharedKey_Live']) ? $gatewayParams['SharedKey_Live'] : ''),
+		);
+	} else {
+		// Gateway Configuration Parameters
+		$Whmcs_Merchant = array(
+			'mallid'			=> (isset($gatewayParams['MallId']) ? $gatewayParams['MallId'] : ''),
+			'shopname'			=> (isset($gatewayParams['ShopName']) ? $gatewayParams['ShopName'] : ''),
+			'chainmerchant'		=> (isset($gatewayParams['ChainMerchant']) ? $gatewayParams['ChainMerchant'] : ''),
+			'sharedkey'			=> (isset($gatewayParams['SharedKey']) ? $gatewayParams['SharedKey'] : ''),
+		);
+	}
+} else {
+	// Gateway Configuration Parameters
+	$Whmcs_Merchant = array(
 		'mallid'			=> (isset($gatewayParams['MallId']) ? $gatewayParams['MallId'] : ''),
 		'shopname'			=> (isset($gatewayParams['ShopName']) ? $gatewayParams['ShopName'] : ''),
 		'chainmerchant'		=> (isset($gatewayParams['ChainMerchant']) ? $gatewayParams['ChainMerchant'] : ''),
 		'sharedkey'			=> (isset($gatewayParams['SharedKey']) ? $gatewayParams['SharedKey'] : ''),
-	),
+	);
+}
+$DokuConfigs = array(
+	'isofile'		=> 'dokuhosted/assets/iso3166.json',
+	'merchant'		=> $Whmcs_Merchant,
 	'endpoint'		=> (is_string($Environment) ? strtolower($Environment) : 'sandbox'), // sandbox as default
 );
 if (class_exists('dokuhosted_DokuPayment')) {
