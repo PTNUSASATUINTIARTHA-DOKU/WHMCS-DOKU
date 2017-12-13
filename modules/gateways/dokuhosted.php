@@ -630,7 +630,7 @@ function dokuhosted_link($params) {
 	exit;
 	*/
 	$Environment = (isset($params['Environment']) ? $params['Environment'] : 'sandbox'); // Sandbox as Default-Environment
-	if (!is_string($Environment) && ((!is_array($Environment)) || (!is_object($Environment)))) {
+	if (is_string($Environment)) {
 		if (strtolower($Environment) === strtolower('live')) {
 			// Gateway Configuration Parameters
 			$MallId = (isset($params['MallId_Live']) ? $params['MallId_Live'] : '');
@@ -1162,7 +1162,7 @@ function dokuhosted_link($params) {
 	$dokuDesc = "";
 	if (strlen($dokuDesc) > 0) {
 		$returnHtml .= '<div class="row">';
-		$returnHtml .= '<div class="small-text"><img alt="doku" src="http://doku.com/themes/default/images/logo-doku-merchant.png" align="left" width="120" height="34" style="padding-right:12px;" />' . $dokuDesc . '</div>';
+		$returnHtml .= '<div class="small-text"><img alt="doku" src="http://doku.com/themes/default/images/logo-doku-merchant.png" align="left" width="120" height-"34" style="padding-right:12px;" />' . $dokuDesc . '</div>';
 		$returnHtml .= '</div>';
 	}
 	
