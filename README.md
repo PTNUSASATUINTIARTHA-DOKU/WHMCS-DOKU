@@ -25,14 +25,14 @@ With this module payment you can accept online payment on your WHMCS using DOKU 
     - DOKU Merchant = For standard payment
     - DOKU Account Billing = For recurring / subscription as advance payment
 4. Then choose Setup -> Payments -> Payment Gateways -> Manage Existing Gateways
-5. Fill the input as instructed on the screen. 
+5. Fill the input as instructed on the screen, (Please read our WIKI if you having an issue with configuration)
 6. Click Save Changes
 
-For more information regarding our installation and configuration please kindly to visit our [Github WIKI](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/wiki) if you have any further assistant or isssue please bear to open the [issues](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/issues) 
+For more information regarding our installation and configuration please kindly to visit our [Github WIKI](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/wiki) if you have any further assistant or isssue please bear us to open the [issues](https://github.com/PTNUSASATUINTIARTHA-DOKU/WHMCS-DOKU/issues) 
 
 #### NOTES ####
 
-* Please note this our payment modules are not using packagist.
+* Please note this payment modules are not using packagist.
 * Add the url on the admin panel to cron on your WHMCS for check status payment process.
 * In order to use this module please register at DOKU Website - [DOKU WEBSITE](http://doku.com/id) to get an API. 
 
